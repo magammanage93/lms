@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Student - EduPlay</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <!-- Screen: Join -->
+  <div id="screen-join" class="container flex-center" style="min-height:100vh; gap:24px;">
+    <div class="text-center">
+      <div class="emoji-big">👨‍🎓</div>
+      <h1>Join a Session</h1>
+      <p class="text-dim">Enter the code from your teacher</p>
+    </div>
+    <div class="card flex-center gap-md" style="max-width:400px;">
+      <input type="text" id="codeInput" class="code-input" placeholder="ABC123" maxlength="6" autocomplete="off">
+      <input type="text" id="nickInput" placeholder="Your Nickname" maxlength="20" autocomplete="off">
+      <button class="btn btn-accent btn-block" onclick="joinSession()">Join! 🚀</button>
+      <p id="joinError" class="text-dim" style="color:var(--danger);"></p>
+    </div>
+    <a href="/" class="btn btn-ghost btn-sm">← Back to Home</a>
+  </div>
+
+  <!-- Screen: Waiting Lobby -->
+  <div id="screen-waiting" class="container flex-center hidden" style="min-height:80vh; gap:24px;">
+    <div class="text-center">
+      <div class="emoji-big">⏳</div>
+      <h2>You're in!</h2>
+      <p>Hi <strong id="displayNick"></strong>!</p>
+      <p class="text-dim">Waiting for teacher to start an activity...</p>
+    </div>
+  </div>
+
+  <!-- Screen: Quiz -->
+  <div id="screen-quiz" class="container hidden">
+    <div class="card text-center" style="margin-bottom:16px;">
+      <h2 id="quizTitle"></h2>
+      <div class="progress-dots" id="progressDots"></div>
+    </div>
+
+    <div id="questionArea" class="hidden">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h3 id="questionText"></h3>
+          <span class="timer-text" id="timerDisplay"></span>
+        </div>
+        <div class="timer-bar"><div class="timer-fill" id="timerFill" style="width:100%"></div></div>
+        <div class="options-grid option-colors" id="optionsGrid"></div>
+      </div>
+    </div>
+
+    <div id="resultArea" class="hidden">
+      <div class="card text-center">
+        <div id="resultEmoji" style="font-size:4rem;"></div>
+        <h2 id="resultText"></h2>
+        <p id="resultPoints"></p>
+        <p class="text-dim" id="resultTotal"></p>
+      </div>
+    </div>
+
+    <div id="waitingNext" class="hidden">
+      <div class="card text-center">
+        <div class="emoji-big">⏳</div>
+        <p class="text-dim">Waiting for next question...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Screen: Quiz End -->
+  <div id="screen-quiz-end" class="container flex-center hidden" style="min-height:80vh; gap:24px;">
+    <div class="text-center">
+      <div style="font-size:5rem;">🏆</div>
+      <h1>Quiz Complete!</h1>
+      <p id="finalScore" style="font-size:1.5rem; font-weight:700; color:var(--accent);"></p>
+    </div>
+    <div class="card" style="max-width:500px;">
+      <h3 style="margin-bottom:12px;">Final Leaderboard</h3>
+      <ol class="leaderboard" id="finalLeaderboard"></ol>
+    </div>
+  </div>
+
+  <!-- Screen: Activity -->
+  <div id="screen-activity" class="container flex-center hidden" style="min-height:80vh; gap:16px;">
+    <div class="text-center">
+      <div id="actEmoji" class="emoji-big"></div>
+      <h2 id="actTitle"></h2>
+      <p class="text-dim">Your teacher started an activity!</p>
+    </div>
+    <a id="actLink" class="btn btn-primary btn-lg" href="#">Open Activity 🎮</a>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    let socket, sessionCode, nickname, quizTotal = 0, currentQIdx = -1, timerInterval, questionTime = 0, answered = false;
+
+    function show(id) {
+      document.querySelectorAll('[id^="screen-"]').forEach(el => el.classList.add('hidden'));
+      document.getElementById(id).classList.remove('hidden');
+    }
+
+    function toast(msg, type = 'success') {
+      const t = document.createElement('div');
+      t.className = `toast toast-${type}`;
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 3000);
+    }
+
+    document.getElementById('codeInput').addEventListener('input', function () {
+      this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    });
+
+    function joinSession() {
+      const code = document.getElementById('codeInput').value.trim().toUpperCase();
+      const nick = document.getElementById('nickInput').value.trim();
+      const err = document.getElementById('joinError');
+
+      if (code.length !== 6) { err.textContent = 'Code must be 6 characters'; return; }
+      if (!nick || nick.length < 2) { err.textContent = 'Enter a nickname (2+ chars)'; return; }
+      err.textContent = '';
+
+      sessionCode = code;
+      nickname = nick;
+
+      socket = io();
+      socket.emit('student-join', { code: sessionCode, nickname });
+
+      socket.on('join-success', ({ state }) => {
+        document.getElementById('displayNick').textContent = nickname;
+        if (state === 'lobby') show('screen-waiting');
+        else if (state === 'quiz') show('screen-quiz');
+      });
+
+      socket.on('error-msg', msg => {
+        err.textContent = msg;
+      });
+
+      setupListeners();
+    }
+
+    function setupListeners() {
+      socket.on('quiz-started', ({ title, total }) => {
+        quizTotal = total;
+        currentQIdx = -1;
+        document.getElementById('quizTitle').textContent = title;
+        document.getElementById('progressDots').innerHTML = Array.from({ length: total },
+          (_, i) => `<div class="dot" id="dot-${i}"></div>`).join('');
+        document.getElementById('questionArea').classList.add('hidden');
+        document.getElementById('resultArea').classList.add('hidden');
+        document.getElementById('waitingNext').classList.remove('hidden');
+        show('screen-quiz');
+      });
+
+      socket.on('question', ({ index, q, options, time }) => {
+        currentQIdx = index;
+        questionTime = time;
+        answered = false;
+
+        document.getElementById('questionText').textContent = `Q${index + 1}: ${q}`;
+        document.getElementById('optionsGrid').innerHTML = options.map((o, i) =>
+          `<button class="option-btn" onclick="submitAnswer(${i})">${o}</button>`).join('');
+
+        document.getElementById('questionArea').classList.remove('hidden');
+        document.getElementById('resultArea').classList.add('hidden');
+        document.getElementById('waitingNext').classList.add('hidden');
+
+        document.querySelectorAll('.dot').forEach((d, i) => {
+          d.className = 'dot' + (i < index ? ' done' : i === index ? ' active' : '');
+        });
+
+        startTimer(time);
+      });
+
+      socket.on('answer-result', ({ correct, points, totalScore, correctAnswer }) => {
+        clearInterval(timerInterval);
+        document.getElementById('resultEmoji').textContent = correct ? '🎉' : '😢';
+        document.getElementById('resultText').textContent = correct ? 'Correct!' : 'Not quite!';
+        document.getElementById('resultPoints').textContent = correct ? `+${points} points` : 'No points this time';
+        document.getElementById('resultTotal').textContent = `Total: ${totalScore} pts`;
+        document.getElementById('resultArea').classList.remove('hidden');
+        document.getElementById('questionArea').classList.add('hidden');
+      });
+
+      socket.on('question-timeout', ({ correctAnswer }) => {
+        clearInterval(timerInterval);
+        if (!answered) {
+          document.getElementById('resultEmoji').textContent = '⏰';
+          document.getElementById('resultText').textContent = "Time's up!";
+          document.getElementById('resultPoints').textContent = '';
+          document.getElementById('resultTotal').textContent = '';
+          document.getElementById('resultArea').classList.remove('hidden');
+          document.getElementById('questionArea').classList.add('hidden');
+        }
+        highlightCorrect(correctAnswer);
+      });
+
+      socket.on('all-answered', ({ correctAnswer }) => {
+        highlightCorrect(correctAnswer);
+      });
+
+      socket.on('quiz-ended', ({ leaderboard }) => {
+        clearInterval(timerInterval);
+        const me = leaderboard.find(s => s.nickname === nickname);
+        document.getElementById('finalScore').textContent = me ? `Your Score: ${me.score} pts` : '';
+        const medals = ['🥇', '🥈', '🥉'];
+        document.getElementById('finalLeaderboard').innerHTML = leaderboard.map((s, i) =>
+          `<li style="${s.nickname === nickname ? 'background:rgba(124,58,237,.2);' : ''}">
+            <span><span class="rank-medal">${medals[i] || `#${i + 1}`}</span> ${s.nickname}</span>
+            <span>${s.score} pts</span>
+          </li>`).join('');
+        show('screen-quiz-end');
+      });
+
+      socket.on('activity-started', ({ type }) => {
+        const isDD = type === 'dragdrop';
+        document.getElementById('actEmoji').textContent = isDD ? '🧩' : '🎨';
+        document.getElementById('actTitle').textContent = isDD ? 'Drag & Drop Game' : 'Drawing Canvas';
+        document.getElementById('actLink').href = isDD
+          ? `/game/dragdrop.html?code=${sessionCode}&nick=${encodeURIComponent(nickname)}`
+          : `/game/draw.html?code=${sessionCode}&nick=${encodeURIComponent(nickname)}`;
+        show('screen-activity');
+      });
+
+      socket.on('activity-ended', () => {
+        show('screen-waiting');
+        toast('Activity ended by teacher');
+      });
+
+      socket.on('back-to-lobby', () => {
+        show('screen-waiting');
+      });
+
+      socket.on('session-ended', () => {
+        socket.disconnect();
+        show('screen-join');
+        toast('Session ended by teacher', 'error');
+      });
+    }
+
+    function submitAnswer(answerIndex) {
+      if (answered) return;
+      answered = true;
+
+      const buttons = document.querySelectorAll('.option-btn');
+      buttons.forEach((b, i) => {
+        b.disabled = true;
+        if (i === answerIndex) b.classList.add('selected');
+      });
+
+      const timerDisplay = document.getElementById('timerDisplay');
+      const timeLeft = parseInt(timerDisplay.textContent) || 0;
+
+      socket.emit('submit-answer', {
+        code: sessionCode,
+        questionIndex: currentQIdx,
+        answerIndex,
+        timeLeft
+      });
+    }
+
+    function highlightCorrect(correctIdx) {
+      const buttons = document.querySelectorAll('.option-btn');
+      buttons.forEach((b, i) => {
+        if (i === correctIdx) b.classList.add('correct');
+      });
+    }
+
+    function startTimer(seconds) {
+      clearInterval(timerInterval);
+      let remaining = seconds;
+      const fill = document.getElementById('timerFill');
+      const display = document.getElementById('timerDisplay');
+      display.textContent = remaining;
+      fill.style.width = '100%';
+
+      timerInterval = setInterval(() => {
+        remaining--;
+        display.textContent = remaining;
+        fill.style.width = `${(remaining / seconds) * 100}%`;
+        if (remaining <= 0) clearInterval(timerInterval);
+      }, 1000);
+    }
+
+    // Auto-rejoin if returning from an activity
+    (function autoRejoin() {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      const nick = params.get('nick');
+      if (code && nick) {
+        document.getElementById('codeInput').value = code;
+        document.getElementById('nickInput').value = nick;
+        history.replaceState(null, '', '/student.html');
+        joinSession();
+      }
+    })();
+  </script>
+</body>
+</html>

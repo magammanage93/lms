@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Drag & Drop - EduPlay</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .dd-label { font-size: .85rem; color: var(--text-dim); margin-bottom: 6px; text-align: center; font-weight: 700; }
+    .score-display { font-size: 1.3rem; font-weight: 800; color: var(--accent); }
+    .dd-item.dragging { opacity: .4; }
+    .dd-ghost {
+      position: fixed;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.9;
+      transform: scale(1.08) rotate(2deg);
+      background: var(--primary);
+      padding: 14px 20px;
+      border-radius: 10px;
+      font-weight: 700;
+      color: #fff;
+      text-align: center;
+      white-space: nowrap;
+      box-shadow: 0 8px 24px rgba(0,0,0,.3);
+    }
+  </style>
+</head>
+<body>
+  <div class="navbar">
+    <div class="brand">🧩 Drag & Drop</div>
+    <div class="score-display" id="scoreDisplay">0 / 0</div>
+  </div>
+
+  <div class="container">
+    <div class="card text-center" style="margin-bottom:20px;">
+      <h2>Match the Items!</h2>
+      <p class="text-dim">Drag items from the left and drop them on the correct match on the right</p>
+    </div>
+
+    <div class="dd-container" id="gameArea"></div>
+
+    <div style="margin-top:20px; text-align:center;">
+      <button class="btn btn-primary btn-lg" id="submitBtn" onclick="submitResult()">Submit Answers ✅</button>
+    </div>
+
+    <div id="resultArea" class="hidden" style="margin-top:20px;">
+      <div class="card text-center">
+        <div id="resultEmoji" style="font-size:4rem;"></div>
+        <h2 id="resultTitle"></h2>
+        <p class="score-display" id="finalScore"></p>
+        <div id="resultDetails" style="margin-top:16px; text-align:left;"></div>
+        <p id="submitted" class="hidden" style="margin-top:12px; color:var(--accent); font-weight:700;">✅ Response Submitted! Returning to session...</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const sessionCode = params.get('code');
+    const nickname = params.get('nick');
+    const socket = io();
+
+    let puzzle, total = 0, placed = 0, placements = {};
+
+    async function loadPuzzles() {
+      const res = await fetch('/api/puzzles');
+      const puzzles = await res.json();
+      puzzle = puzzles[Math.floor(Math.random() * puzzles.length)];
+      total = puzzle.pairs.length;
+      render();
+    }
+    loadPuzzles();
+
+    function shuffle(arr) {
+      const a = [...arr];
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    function render() {
+      const area = document.getElementById('gameArea');
+      const shuffledItems = shuffle(puzzle.pairs);
+      const shuffledTargets = shuffle(puzzle.pairs);
+
+      area.innerHTML = `
+        <div>
+          <div class="dd-label">ITEMS</div>
+          <div class="dd-items" id="itemsCol">
+            ${shuffledItems.map((p, i) => `<div class="dd-item" draggable="true" data-match="${p.target}" id="item-${i}">${p.item}</div>`).join('')}
+          </div>
+        </div>
+        <div>
+          <div class="dd-label">MATCHES</div>
+          <div class="dd-targets" id="targetsCol">
+            ${shuffledTargets.map((p, i) => `<div class="dd-target" data-answer="${p.target}" id="target-${i}">${p.target}</div>`).join('')}
+          </div>
+        </div>
+      `;
+
+      document.getElementById('scoreDisplay').textContent = `0 / ${total} placed`;
+      setupDragDrop();
+    }
+
+    function setupDragDrop() {
+      let draggedEl = null;
+      let ghost = null;
+      let currentHover = null;
+
+      function createGhost(item, x, y) {
+        ghost = document.createElement('div');
+        ghost.className = 'dd-ghost';
+        ghost.textContent = item.textContent;
+        ghost.style.left = (x - 60) + 'px';
+        ghost.style.top = (y - 25) + 'px';
+        document.body.appendChild(ghost);
+      }
+
+      function moveGhost(x, y) {
+        if (!ghost) return;
+        ghost.style.left = (x - 60) + 'px';
+        ghost.style.top = (y - 25) + 'px';
+      }
+
+      function removeGhost() {
+        if (ghost) { ghost.remove(); ghost = null; }
+      }
+
+      function highlightTarget(x, y) {
+        const el = document.elementFromPoint(x, y);
+        if (currentHover && currentHover !== el) currentHover.classList.remove('hover');
+        if (el && el.classList.contains('dd-target') && !el.classList.contains('matched')) {
+          el.classList.add('hover');
+          currentHover = el;
+        } else {
+          currentHover = null;
+        }
+      }
+
+      document.querySelectorAll('.dd-item:not(.matched)').forEach(item => {
+        // Desktop drag
+        item.addEventListener('dragstart', (e) => {
+          draggedEl = item;
+          item.classList.add('dragging');
+          e.dataTransfer.effectAllowed = 'move';
+        });
+        item.addEventListener('dragend', () => {
+          item.classList.remove('dragging');
+          draggedEl = null;
+        });
+
+        // Touch drag
+        item.addEventListener('touchstart', (e) => {
+          e.preventDefault();
+          draggedEl = item;
+          item.classList.add('dragging');
+          const t = e.touches[0];
+          createGhost(item, t.clientX, t.clientY);
+        });
+
+        item.addEventListener('touchmove', (e) => {
+          e.preventDefault();
+          const t = e.touches[0];
+          moveGhost(t.clientX, t.clientY);
+          highlightTarget(t.clientX, t.clientY);
+        });
+
+        item.addEventListener('touchend', (e) => {
+          e.preventDefault();
+          item.classList.remove('dragging');
+          removeGhost();
+          if (currentHover) currentHover.classList.remove('hover');
+
+          const t = e.changedTouches[0];
+          const dropTarget = document.elementFromPoint(t.clientX, t.clientY);
+          if (dropTarget && dropTarget.classList.contains('dd-target') && !dropTarget.classList.contains('matched') && draggedEl) {
+            handleDrop(dropTarget, draggedEl);
+          }
+          draggedEl = null;
+          currentHover = null;
+        });
+
+        item.addEventListener('touchcancel', () => {
+          item.classList.remove('dragging');
+          removeGhost();
+          draggedEl = null;
+          if (currentHover) currentHover.classList.remove('hover');
+          currentHover = null;
+        });
+      });
+
+      document.querySelectorAll('.dd-target:not(.matched)').forEach(target => {
+        target.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          target.classList.add('hover');
+        });
+        target.addEventListener('dragleave', () => {
+          target.classList.remove('hover');
+        });
+        target.addEventListener('drop', (e) => {
+          e.preventDefault();
+          target.classList.remove('hover');
+          if (draggedEl) handleDrop(target, draggedEl);
+        });
+      });
+    }
+
+    function handleDrop(target, item) {
+      // If target already has an item, release the old one back
+      const existingItemId = target.getAttribute('data-placed-item');
+      if (existingItemId) {
+        const oldItem = document.getElementById(existingItemId);
+        if (oldItem) {
+          oldItem.classList.remove('matched');
+          oldItem.style.display = '';
+        }
+        delete placements[target.id];
+        placed--;
+      }
+
+      // Place the item on this target
+      item.classList.add('matched');
+      item.style.display = 'none';
+      target.classList.add('matched');
+      target.setAttribute('data-placed-item', item.id);
+      target.innerHTML = `${item.textContent} → ${target.textContent}`;
+      placements[target.id] = { item: item.textContent, itemMatch: item.getAttribute('data-match'), targetAnswer: target.getAttribute('data-answer') };
+      placed++;
+
+      document.getElementById('scoreDisplay').textContent = `${placed} / ${total} placed`;
+    }
+
+    function submitResult() {
+      if (placed < total) {
+        if (!confirm(`You have only placed ${placed} of ${total} items. Submit anyway?`)) return;
+      }
+
+      // Evaluate
+      let score = 0;
+      const results = [];
+      document.querySelectorAll('.dd-target').forEach(target => {
+        const p = placements[target.id];
+        const targetLabel = target.getAttribute('data-answer');
+        if (p) {
+          const correct = p.itemMatch === p.targetAnswer;
+          if (correct) score++;
+          results.push({ item: p.item, placedOn: targetLabel, correct });
+          target.innerHTML = `${p.item} → ${targetLabel} ${correct ? '✅' : '❌'}`;
+          target.style.borderColor = correct ? 'var(--accent)' : 'var(--danger)';
+          target.style.borderStyle = 'solid';
+          target.style.background = correct ? 'rgba(6,214,160,.15)' : 'rgba(239,68,68,.15)';
+        } else {
+          results.push({ item: '(empty)', placedOn: targetLabel, correct: false });
+          target.style.borderColor = 'var(--danger)';
+          target.style.background = 'rgba(239,68,68,.1)';
+        }
+      });
+
+      // Show results
+      const pct = Math.round((score / total) * 100);
+      document.getElementById('resultEmoji').textContent = pct === 100 ? '🎉' : pct >= 60 ? '👍' : '💪';
+      document.getElementById('resultTitle').textContent = pct === 100 ? 'Perfect!' : pct >= 60 ? 'Good Job!' : 'Keep Practicing!';
+      document.getElementById('finalScore').textContent = `${score} / ${total} correct (${pct}%)`;
+
+      document.getElementById('resultDetails').innerHTML = results.map(r =>
+        `<div style="padding:6px 0; border-bottom:1px solid rgba(255,255,255,.06);">
+          ${r.correct ? '✅' : '❌'} <strong>${r.item}</strong> → ${r.placedOn}
+        </div>`
+      ).join('');
+
+      document.getElementById('resultArea').classList.remove('hidden');
+      document.getElementById('submitBtn').disabled = true;
+      document.getElementById('submitBtn').textContent = 'Submitted';
+
+      // Send to teacher
+      socket.emit('student-join', { code: sessionCode, nickname });
+      setTimeout(() => {
+        socket.emit('submit-activity', {
+          code: sessionCode,
+          type: 'dragdrop',
+          data: { score, total, results, puzzle: puzzle.title }
+        });
+        document.getElementById('submitted').classList.remove('hidden');
+        setTimeout(() => {
+          window.location.href = `/student.html?code=${sessionCode}&nick=${encodeURIComponent(nickname)}`;
+        }, 3000);
+      }, 500);
+    }
+
+  </script>
+</body>
+</html>

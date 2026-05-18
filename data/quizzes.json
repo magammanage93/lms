@@ -1,0 +1,35 @@
+{
+  "math": {
+    "title": "Fun Math Quiz",
+    "emoji": "🔢",
+    "questions": [
+      { "q": "What is 3 + 4?", "options": ["5", "6", "7", "8"], "answer": 2, "time": 15 },
+      { "q": "What is 10 - 6?", "options": ["3", "4", "5", "6"], "answer": 1, "time": 15 },
+      { "q": "What is 5 × 2?", "options": ["7", "8", "10", "12"], "answer": 2, "time": 15 },
+      { "q": "What is 12 ÷ 3?", "options": ["2", "3", "4", "5"], "answer": 2, "time": 15 },
+      { "q": "What is 8 + 7?", "options": ["13", "14", "15", "16"], "answer": 2, "time": 15 }
+    ]
+  },
+  "science": {
+    "title": "Science Explorer",
+    "emoji": "🔬",
+    "questions": [
+      { "q": "What planet is closest to the Sun?", "options": ["Earth", "Mercury", "Venus", "Mars"], "answer": 1, "time": 20 },
+      { "q": "How many legs does a spider have?", "options": ["6", "8", "10", "4"], "answer": 1, "time": 15 },
+      { "q": "What gas do plants breathe in?", "options": ["Oxygen", "Nitrogen", "Carbon Dioxide", "Helium"], "answer": 2, "time": 20 },
+      { "q": "Water freezes at what temperature?", "options": ["0°C", "10°C", "50°C", "100°C"], "answer": 0, "time": 15 },
+      { "q": "What is the largest animal on Earth?", "options": ["Elephant", "Giraffe", "Blue Whale", "Shark"], "answer": 2, "time": 15 }
+    ]
+  },
+  "english": {
+    "title": "English Fun",
+    "emoji": "📖",
+    "questions": [
+      { "q": "Which word is a noun?", "options": ["Run", "Happy", "Dog", "Quickly"], "answer": 2, "time": 15 },
+      { "q": "What is the opposite of \"hot\"?", "options": ["Warm", "Cold", "Cool", "Mild"], "answer": 1, "time": 10 },
+      { "q": "Which is a vowel?", "options": ["B", "C", "E", "D"], "answer": 2, "time": 10 },
+      { "q": "Complete: The cat ___ on the mat.", "options": ["sit", "sat", "set", "sit"], "answer": 1, "time": 15 },
+      { "q": "How many letters in \"APPLE\"?", "options": ["4", "5", "6", "3"], "answer": 1, "time": 10 }
+    ]
+  }
+}

@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Content Manager - EduPlay</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .tabs { display: flex; gap: 0; margin-bottom: 24px; }
+    .tab {
+      padding: 12px 24px; cursor: pointer; font-weight: 700; border: none;
+      background: var(--surface); color: var(--text-dim); font-size: 1rem;
+      transition: all .2s;
+    }
+    .tab:first-child { border-radius: 10px 0 0 10px; }
+    .tab:last-child { border-radius: 0 10px 10px 0; }
+    .tab.active { background: var(--primary); color: #fff; }
+    .item-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
+    .item-row {
+      background: var(--surface); border-radius: 10px; padding: 16px;
+      display: flex; justify-content: space-between; align-items: center;
+      border: 2px solid transparent; transition: border-color .2s; cursor: pointer;
+    }
+    .item-row:hover { border-color: var(--primary-light); }
+    .item-row .meta { display: flex; align-items: center; gap: 12px; }
+    .item-row .emoji { font-size: 1.8rem; }
+    .item-row .actions { display: flex; gap: 8px; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-weight: 700; margin-bottom: 6px; color: var(--text-dim); font-size: .9rem; }
+    .form-row { display: flex; gap: 12px; align-items: flex-end; }
+    .form-row > * { flex: 1; }
+    .question-block {
+      background: var(--surface); border-radius: 10px; padding: 16px; margin-bottom: 12px;
+      border-left: 4px solid var(--primary);
+    }
+    .question-block .q-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .question-block .q-num { font-weight: 800; color: var(--primary-light); }
+    .options-edit { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .opt-wrap { position: relative; }
+    .opt-wrap input { padding-right: 40px; }
+    .opt-wrap .correct-mark {
+      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+      width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--text-dim);
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      font-size: .8rem; transition: all .2s;
+    }
+    .opt-wrap .correct-mark.active { background: var(--accent); border-color: var(--accent); }
+    .pair-block {
+      background: var(--surface); border-radius: 10px; padding: 12px 16px;
+      display: flex; gap: 12px; align-items: center; margin-bottom: 8px;
+    }
+    .pair-block input { flex: 1; }
+    .empty-state { text-align: center; padding: 40px; color: var(--text-dim); }
+    .emoji-picker {
+      display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px;
+    }
+    .emoji-opt {
+      font-size: 1.5rem; cursor: pointer; padding: 4px 8px; border-radius: 8px;
+      border: 2px solid transparent; transition: all .15s;
+    }
+    .emoji-opt:hover { background: var(--surface); }
+    .emoji-opt.active { border-color: var(--primary); background: rgba(124,58,237,.2); }
+    .badge { background: var(--primary); color: #fff; font-size: .75rem; padding: 2px 8px; border-radius: 20px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <!-- PIN Gate -->
+  <div id="authGate" class="container flex-center" style="min-height:100vh; gap:24px;">
+    <div class="emoji-big">🔒</div>
+    <h1>Content Manager</h1>
+    <p class="text-dim">Enter teacher PIN to access</p>
+    <div class="card flex-center gap-md" style="max-width:360px;">
+      <input type="password" id="pinInput" style="font-size:1.5rem; text-align:center; letter-spacing:8px;" placeholder="••••" maxlength="20" autocomplete="off"
+        onkeydown="if(event.key==='Enter') verifyPin()">
+      <button class="btn btn-primary btn-block" onclick="verifyPin()">Enter</button>
+      <p id="pinError" style="color:var(--danger); font-weight:600;"></p>
+    </div>
+    <a href="/" class="btn btn-ghost btn-sm">← Back to Home</a>
+  </div>
+
+  <div id="mainContent" class="hidden">
+  <div class="navbar">
+    <div class="brand">⚙️ Content Manager</div>
+    <a href="/teacher.html" class="btn btn-ghost btn-sm">← Teacher Dashboard</a>
+  </div>
+
+  <div class="container">
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('quizzes')">📝 Quizzes</button>
+      <button class="tab" onclick="switchTab('puzzles')">🧩 Drag & Drop</button>
+    </div>
+
+    <!-- ═══ QUIZZES TAB ═══ -->
+    <div id="tab-quizzes">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h2>Quizzes</h2>
+        <button class="btn btn-primary btn-sm" onclick="newQuiz()">+ New Quiz</button>
+      </div>
+      <div class="item-list" id="quizList"></div>
+
+      <!-- Quiz Editor -->
+      <div id="quizEditor" class="hidden">
+        <div class="card">
+          <h3 id="editorTitle" style="margin-bottom:16px;">Edit Quiz</h3>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Quiz ID (lowercase, no spaces)</label>
+              <input type="text" id="quizId" placeholder="e.g. animals">
+            </div>
+            <div class="form-group">
+              <label>Quiz Title</label>
+              <input type="text" id="quizTitleInput" placeholder="e.g. Animal Kingdom">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Emoji</label>
+            <div class="emoji-picker" id="quizEmojiPicker">
+              <span class="emoji-opt" data-e="📝">📝</span>
+              <span class="emoji-opt" data-e="🔢">🔢</span>
+              <span class="emoji-opt" data-e="🔬">🔬</span>
+              <span class="emoji-opt" data-e="📖">📖</span>
+              <span class="emoji-opt" data-e="🌍">🌍</span>
+              <span class="emoji-opt" data-e="🎵">🎵</span>
+              <span class="emoji-opt" data-e="🎨">🎨</span>
+              <span class="emoji-opt" data-e="🐾">🐾</span>
+              <span class="emoji-opt" data-e="🏛️">🏛️</span>
+              <span class="emoji-opt" data-e="💻">💻</span>
+              <span class="emoji-opt" data-e="🧮">🧮</span>
+              <span class="emoji-opt" data-e="🎯">🎯</span>
+            </div>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; margin:20px 0 12px;">
+            <h3>Questions</h3>
+            <button class="btn btn-accent btn-sm" onclick="addQuestion()">+ Add Question</button>
+          </div>
+          <div id="questionsContainer"></div>
+
+          <div style="display:flex; gap:12px; margin-top:20px;">
+            <button class="btn btn-primary" onclick="saveQuiz()">💾 Save Quiz</button>
+            <button class="btn btn-ghost" onclick="cancelEdit()">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ PUZZLES TAB ═══ -->
+    <div id="tab-puzzles" class="hidden">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h2>Drag & Drop Puzzles</h2>
+        <button class="btn btn-primary btn-sm" onclick="newPuzzle()">+ New Puzzle</button>
+      </div>
+      <div class="item-list" id="puzzleList"></div>
+
+      <!-- Puzzle Editor -->
+      <div id="puzzleEditor" class="hidden">
+        <div class="card">
+          <h3 id="puzzleEditorTitle" style="margin-bottom:16px;">Edit Puzzle</h3>
+
+          <div class="form-group">
+            <label>Puzzle Title</label>
+            <input type="text" id="puzzleTitleInput" placeholder="e.g. Animals & Their Sounds">
+          </div>
+
+          <div class="form-group">
+            <label>Emoji</label>
+            <div class="emoji-picker" id="puzzleEmojiPicker">
+              <span class="emoji-opt" data-e="🧩">🧩</span>
+              <span class="emoji-opt" data-e="🐾">🐾</span>
+              <span class="emoji-opt" data-e="🎨">🎨</span>
+              <span class="emoji-opt" data-e="🌍">🌍</span>
+              <span class="emoji-opt" data-e="🍎">🍎</span>
+              <span class="emoji-opt" data-e="🔢">🔢</span>
+              <span class="emoji-opt" data-e="🎵">🎵</span>
+              <span class="emoji-opt" data-e="🏠">🏠</span>
+              <span class="emoji-opt" data-e="⚽">⚽</span>
+              <span class="emoji-opt" data-e="🚗">🚗</span>
+            </div>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; margin:20px 0 12px;">
+            <h3>Pairs</h3>
+            <button class="btn btn-accent btn-sm" onclick="addPair()">+ Add Pair</button>
+          </div>
+          <div id="pairsContainer"></div>
+
+          <div style="display:flex; gap:12px; margin-top:20px;">
+            <button class="btn btn-primary" onclick="savePuzzle()">💾 Save Puzzle</button>
+            <button class="btn btn-ghost" onclick="cancelPuzzleEdit()">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentQuizId = null;
+    let currentPuzzleIdx = -1;
+    let selectedQuizEmoji = '📝';
+    let selectedPuzzleEmoji = '🧩';
+    let questionCounter = 0;
+    let pairCounter = 0;
+
+    function switchTab(tab) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('tab-quizzes').classList.add('hidden');
+      document.getElementById('tab-puzzles').classList.add('hidden');
+      if (tab === 'quizzes') {
+        document.querySelectorAll('.tab')[0].classList.add('active');
+        document.getElementById('tab-quizzes').classList.remove('hidden');
+      } else {
+        document.querySelectorAll('.tab')[1].classList.add('active');
+        document.getElementById('tab-puzzles').classList.remove('hidden');
+      }
+    }
+
+    function toast(msg, type = 'success') {
+      const t = document.createElement('div');
+      t.className = `toast toast-${type}`;
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 3000);
+    }
+
+    // ═══════════════ QUIZ MANAGEMENT ═══════════════
+
+    async function loadQuizList() {
+      const res = await fetch('/api/admin/quizzes');
+      const quizzes = await res.json();
+      const list = document.getElementById('quizList');
+
+      if (Object.keys(quizzes).length === 0) {
+        list.innerHTML = '<div class="empty-state">No quizzes yet. Click "+ New Quiz" to create one.</div>';
+        return;
+      }
+
+      list.innerHTML = Object.entries(quizzes).map(([id, q]) => `
+        <div class="item-row" onclick="editQuiz('${id}')">
+          <div class="meta">
+            <span class="emoji">${q.emoji || '📝'}</span>
+            <div>
+              <strong>${q.title}</strong>
+              <div class="text-dim" style="font-size:.85rem;">${q.questions.length} questions · ID: ${id}</div>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); editQuiz('${id}')">✏️ Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteQuiz('${id}')">🗑</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function newQuiz() {
+      currentQuizId = null;
+      document.getElementById('editorTitle').textContent = 'New Quiz';
+      document.getElementById('quizId').value = '';
+      document.getElementById('quizId').disabled = false;
+      document.getElementById('quizTitleInput').value = '';
+      selectedQuizEmoji = '📝';
+      updateEmojiPicker('quizEmojiPicker', selectedQuizEmoji);
+      document.getElementById('questionsContainer').innerHTML = '';
+      questionCounter = 0;
+      addQuestion();
+      document.getElementById('quizEditor').classList.remove('hidden');
+    }
+
+    async function editQuiz(id) {
+      const res = await fetch('/api/admin/quizzes');
+      const quizzes = await res.json();
+      const quiz = quizzes[id];
+      if (!quiz) return;
+
+      currentQuizId = id;
+      document.getElementById('editorTitle').textContent = 'Edit Quiz';
+      document.getElementById('quizId').value = id;
+      document.getElementById('quizId').disabled = true;
+      document.getElementById('quizTitleInput').value = quiz.title;
+      selectedQuizEmoji = quiz.emoji || '📝';
+      updateEmojiPicker('quizEmojiPicker', selectedQuizEmoji);
+
+      document.getElementById('questionsContainer').innerHTML = '';
+      questionCounter = 0;
+      quiz.questions.forEach(q => addQuestion(q));
+      document.getElementById('quizEditor').classList.remove('hidden');
+    }
+
+    function addQuestion(data = null) {
+      const idx = questionCounter++;
+      const block = document.createElement('div');
+      block.className = 'question-block';
+      block.id = `q-block-${idx}`;
+
+      const q = data || { q: '', options: ['', '', '', ''], answer: 0, time: 15 };
+
+      block.innerHTML = `
+        <div class="q-header">
+          <span class="q-num">Question ${idx + 1}</span>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <label style="font-size:.85rem; color:var(--text-dim);">Time (sec):</label>
+            <input type="number" class="q-time" value="${q.time}" min="5" max="120" style="width:70px; padding:6px 10px; font-size:.9rem;">
+            <button class="btn btn-danger btn-sm" onclick="removeQuestion(${idx})" style="padding:6px 12px;">✕</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <input type="text" class="q-text" placeholder="Enter your question..." value="${escHtml(q.q)}">
+        </div>
+        <label style="font-size:.85rem; color:var(--text-dim); margin-bottom:6px; display:block;">Options (click ✓ to mark correct answer):</label>
+        <div class="options-edit">
+          ${q.options.map((opt, i) => `
+            <div class="opt-wrap">
+              <input type="text" class="q-opt" data-oidx="${i}" placeholder="Option ${i + 1}" value="${escHtml(opt)}">
+              <div class="correct-mark ${i === q.answer ? 'active' : ''}" data-oidx="${i}" onclick="markCorrect(${idx}, ${i})">✓</div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+      document.getElementById('questionsContainer').appendChild(block);
+    }
+
+    function removeQuestion(idx) {
+      const el = document.getElementById(`q-block-${idx}`);
+      if (el) el.remove();
+    }
+
+    function markCorrect(qIdx, optIdx) {
+      const block = document.getElementById(`q-block-${qIdx}`);
+      if (!block) return;
+      block.querySelectorAll('.correct-mark').forEach(m => m.classList.remove('active'));
+      block.querySelector(`.correct-mark[data-oidx="${optIdx}"]`).classList.add('active');
+    }
+
+    async function saveQuiz() {
+      const id = document.getElementById('quizId').value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      const title = document.getElementById('quizTitleInput').value.trim();
+
+      if (!id) return toast('Quiz ID is required', 'error');
+      if (!title) return toast('Quiz title is required', 'error');
+
+      const blocks = document.querySelectorAll('.question-block');
+      if (blocks.length === 0) return toast('Add at least one question', 'error');
+
+      const questions = [];
+      for (const block of blocks) {
+        const q = block.querySelector('.q-text').value.trim();
+        const time = parseInt(block.querySelector('.q-time').value) || 15;
+        const opts = [...block.querySelectorAll('.q-opt')].map(o => o.value.trim());
+        const activeCorrect = block.querySelector('.correct-mark.active');
+        const answer = activeCorrect ? parseInt(activeCorrect.dataset.oidx) : 0;
+
+        if (!q) return toast('All questions must have text', 'error');
+        if (opts.some(o => !o)) return toast('All options must be filled', 'error');
+        questions.push({ q, options: opts, answer, time });
+      }
+
+      const res = await fetch(`/api/admin/quizzes/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, emoji: selectedQuizEmoji, questions })
+      });
+
+      if (res.ok) {
+        toast('Quiz saved!');
+        cancelEdit();
+        loadQuizList();
+      } else {
+        const err = await res.json();
+        toast(err.error || 'Save failed', 'error');
+      }
+    }
+
+    async function deleteQuiz(id) {
+      if (!confirm(`Delete quiz "${id}"? This cannot be undone.`)) return;
+      const res = await fetch(`/api/admin/quizzes/${id}`, { method: 'DELETE' });
+      if (res.ok) { toast('Quiz deleted'); loadQuizList(); }
+      else toast('Delete failed', 'error');
+    }
+
+    function cancelEdit() {
+      document.getElementById('quizEditor').classList.add('hidden');
+      currentQuizId = null;
+    }
+
+    // ═══════════════ PUZZLE MANAGEMENT ═══════════════
+
+    async function loadPuzzleList() {
+      const res = await fetch('/api/admin/puzzles');
+      const puzzles = await res.json();
+      const list = document.getElementById('puzzleList');
+
+      if (puzzles.length === 0) {
+        list.innerHTML = '<div class="empty-state">No puzzles yet. Click "+ New Puzzle" to create one.</div>';
+        return;
+      }
+
+      list.innerHTML = puzzles.map((p, i) => `
+        <div class="item-row" onclick="editPuzzle(${i})">
+          <div class="meta">
+            <span class="emoji">${p.emoji || '🧩'}</span>
+            <div>
+              <strong>${p.title}</strong>
+              <div class="text-dim" style="font-size:.85rem;">${p.pairs.length} pairs</div>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); editPuzzle(${i})">✏️ Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deletePuzzle(${i})">🗑</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function newPuzzle() {
+      currentPuzzleIdx = -1;
+      document.getElementById('puzzleEditorTitle').textContent = 'New Puzzle';
+      document.getElementById('puzzleTitleInput').value = '';
+      selectedPuzzleEmoji = '🧩';
+      updateEmojiPicker('puzzleEmojiPicker', selectedPuzzleEmoji);
+      document.getElementById('pairsContainer').innerHTML = '';
+      pairCounter = 0;
+      addPair();
+      addPair();
+      addPair();
+      document.getElementById('puzzleEditor').classList.remove('hidden');
+    }
+
+    async function editPuzzle(idx) {
+      const res = await fetch('/api/admin/puzzles');
+      const puzzles = await res.json();
+      const puzzle = puzzles[idx];
+      if (!puzzle) return;
+
+      currentPuzzleIdx = idx;
+      document.getElementById('puzzleEditorTitle').textContent = 'Edit Puzzle';
+      document.getElementById('puzzleTitleInput').value = puzzle.title;
+      selectedPuzzleEmoji = puzzle.emoji || '🧩';
+      updateEmojiPicker('puzzleEmojiPicker', selectedPuzzleEmoji);
+
+      document.getElementById('pairsContainer').innerHTML = '';
+      pairCounter = 0;
+      puzzle.pairs.forEach(p => addPair(p));
+      document.getElementById('puzzleEditor').classList.remove('hidden');
+    }
+
+    function addPair(data = null) {
+      const idx = pairCounter++;
+      const block = document.createElement('div');
+      block.className = 'pair-block';
+      block.id = `pair-${idx}`;
+      block.innerHTML = `
+        <span style="font-weight:700; color:var(--text-dim); min-width:20px;">${idx + 1}</span>
+        <input type="text" class="pair-item" placeholder="Drag item (e.g. 🐶 Dog)" value="${escHtml(data ? data.item : '')}">
+        <span style="font-size:1.2rem;">→</span>
+        <input type="text" class="pair-target" placeholder="Drop target (e.g. Woof!)" value="${escHtml(data ? data.target : '')}">
+        <button class="btn btn-danger btn-sm" onclick="removePair(${idx})" style="padding:6px 12px;">✕</button>
+      `;
+      document.getElementById('pairsContainer').appendChild(block);
+    }
+
+    function removePair(idx) {
+      const el = document.getElementById(`pair-${idx}`);
+      if (el) el.remove();
+    }
+
+    async function savePuzzle() {
+      const title = document.getElementById('puzzleTitleInput').value.trim();
+      if (!title) return toast('Puzzle title is required', 'error');
+
+      const blocks = document.querySelectorAll('.pair-block');
+      if (blocks.length < 2) return toast('Add at least 2 pairs', 'error');
+
+      const pairs = [];
+      for (const block of blocks) {
+        const item = block.querySelector('.pair-item').value.trim();
+        const target = block.querySelector('.pair-target').value.trim();
+        if (!item || !target) return toast('All pairs must be filled', 'error');
+        pairs.push({ item, target });
+      }
+
+      const idx = currentPuzzleIdx >= 0 ? currentPuzzleIdx : 999;
+      const res = await fetch(`/api/admin/puzzles/${idx}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, emoji: selectedPuzzleEmoji, pairs })
+      });
+
+      if (res.ok) {
+        toast('Puzzle saved!');
+        cancelPuzzleEdit();
+        loadPuzzleList();
+      } else {
+        const err = await res.json();
+        toast(err.error || 'Save failed', 'error');
+      }
+    }
+
+    async function deletePuzzle(idx) {
+      if (!confirm('Delete this puzzle? This cannot be undone.')) return;
+      const res = await fetch(`/api/admin/puzzles/${idx}`, { method: 'DELETE' });
+      if (res.ok) { toast('Puzzle deleted'); loadPuzzleList(); }
+      else toast('Delete failed', 'error');
+    }
+
+    function cancelPuzzleEdit() {
+      document.getElementById('puzzleEditor').classList.add('hidden');
+      currentPuzzleIdx = -1;
+    }
+
+    // ═══════════════ HELPERS ═══════════════
+
+    function updateEmojiPicker(pickerId, selected) {
+      document.querySelectorAll(`#${pickerId} .emoji-opt`).forEach(el => {
+        el.classList.toggle('active', el.dataset.e === selected);
+      });
+    }
+
+    document.querySelectorAll('#quizEmojiPicker .emoji-opt').forEach(el => {
+      el.addEventListener('click', () => {
+        selectedQuizEmoji = el.dataset.e;
+        updateEmojiPicker('quizEmojiPicker', selectedQuizEmoji);
+      });
+    });
+
+    document.querySelectorAll('#puzzleEmojiPicker .emoji-opt').forEach(el => {
+      el.addEventListener('click', () => {
+        selectedPuzzleEmoji = el.dataset.e;
+        updateEmojiPicker('puzzleEmojiPicker', selectedPuzzleEmoji);
+      });
+    });
+
+    function escHtml(str) {
+      return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    async function verifyPin() {
+      const pin = document.getElementById('pinInput').value;
+      const err = document.getElementById('pinError');
+      if (!pin) { err.textContent = 'Enter a PIN'; return; }
+
+      const res = await fetch('/api/auth/teacher', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin })
+      });
+
+      if (res.ok) {
+        sessionStorage.setItem('teacher_auth', 'true');
+        document.getElementById('authGate').classList.add('hidden');
+        document.getElementById('mainContent').classList.remove('hidden');
+        loadQuizList();
+        loadPuzzleList();
+      } else {
+        err.textContent = 'Wrong PIN. Try again.';
+        document.getElementById('pinInput').value = '';
+      }
+    }
+
+    if (sessionStorage.getItem('teacher_auth') === 'true') {
+      document.getElementById('authGate').classList.add('hidden');
+      document.getElementById('mainContent').classList.remove('hidden');
+      loadQuizList();
+      loadPuzzleList();
+    }
+  </script>
+</div>
+</body>
+</html>

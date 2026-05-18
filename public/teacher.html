@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teacher Dashboard - EduPlay</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="navbar">
+    <div class="brand">🎓 EduPlay <span class="text-dim" style="font-size:.8rem;">Teacher</span></div>
+    <div class="session-info" id="navInfo"></div>
+  </div>
+
+  <!-- Screen: PIN Login -->
+  <div id="screen-login" class="container flex-center" style="min-height:80vh; gap:24px;">
+    <div class="emoji-big">🔒</div>
+    <h1>Teacher Login</h1>
+    <p class="text-dim">Enter your teacher PIN to continue</p>
+    <div class="card flex-center gap-md" style="max-width:360px;">
+      <input type="password" id="pinInput" class="code-input" placeholder="••••" maxlength="20" autocomplete="off"
+        onkeydown="if(event.key==='Enter') verifyPin()">
+      <button class="btn btn-primary btn-block" onclick="verifyPin()">Enter</button>
+      <p id="pinError" style="color:var(--danger); font-weight:600;"></p>
+    </div>
+    <a href="/" class="btn btn-ghost btn-sm">← Back to Home</a>
+  </div>
+
+  <!-- Screen: Create Session -->
+  <div id="screen-create" class="container flex-center hidden" style="min-height:80vh; gap:24px;">
+    <div class="emoji-big">👩‍🏫</div>
+    <h1>Teacher Dashboard</h1>
+    <p class="text-dim">Create a session for your class to join</p>
+    <button class="btn btn-primary btn-lg" onclick="createSession()">Create Session</button>
+    <a href="/" class="btn btn-ghost btn-sm">← Back to Home</a>
+  </div>
+
+  <!-- Screen: Lobby -->
+  <div id="screen-lobby" class="container hidden">
+    <div class="text-center" style="margin-bottom:24px;">
+      <p class="text-dim">Share this code with your students:</p>
+      <div class="session-code" id="sessionCode" style="cursor:pointer;" onclick="copyCode()" title="Click to copy"></div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:8px;" onclick="copyCode()" id="copyBtn">📋 Copy Code</button>
+      <p class="text-dim" style="margin-top:6px;" id="studentCount">0 students joined</p>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <h3>Students in Room</h3>
+      <div class="student-list" id="studentList">
+        <p class="text-dim">Waiting for students to join...</p>
+      </div>
+    </div>
+
+    <h3 style="margin-bottom:12px;">Start an Activity</h3>
+    <div class="quiz-grid" id="quizGrid" style="margin-bottom:20px;"></div>
+
+    <h3 style="margin-bottom:12px;">Learning Activities</h3>
+    <div class="activity-grid">
+      <div class="activity-card" onclick="startActivity('dragdrop')">
+        <span class="emoji">🧩</span>
+        <strong>Drag & Drop</strong>
+        <p class="text-dim" style="font-size:.85rem;">Match items together</p>
+      </div>
+      <div class="activity-card" onclick="startActivity('draw')">
+        <span class="emoji">🎨</span>
+        <strong>Drawing Canvas</strong>
+        <p class="text-dim" style="font-size:.85rem;">Draw & color freely</p>
+      </div>
+    </div>
+
+    <div style="margin-top:24px; text-align:center; display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+      <button class="btn btn-ghost btn-sm" onclick="viewSubmissions()">📊 View All Submissions</button>
+      <a href="/admin.html" class="btn btn-ghost btn-sm">⚙️ Edit Content</a>
+      <button class="btn btn-danger btn-sm" onclick="endSession()">⏹ End Session</button>
+    </div>
+  </div>
+
+  <!-- Screen: Quiz Control -->
+  <div id="screen-quiz" class="container hidden">
+    <div class="card text-center" style="margin-bottom:20px;">
+      <h2 id="quizTitle"></h2>
+      <div class="progress-dots" id="progressDots"></div>
+      <p class="text-dim" id="quizStatus">Ready to start</p>
+    </div>
+
+    <div id="questionArea" class="hidden">
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h3 id="currentQuestion"></h3>
+          <span class="timer-text" id="timerDisplay"></span>
+        </div>
+        <div class="timer-bar"><div class="timer-fill" id="timerFill" style="width:100%"></div></div>
+        <div class="options-grid option-colors" id="teacherOptions"></div>
+        <p class="text-dim" style="margin-top:12px;" id="answerProgress">0 / 0 answered</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3 style="margin-bottom:12px;">🏆 Live Leaderboard</h3>
+      <ol class="leaderboard" id="leaderboard"></ol>
+    </div>
+
+    <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+      <button class="btn btn-primary" id="nextBtn" onclick="nextQuestion()">▶ Start First Question</button>
+      <button class="btn btn-ghost btn-sm" onclick="backToLobby()">← Back to Lobby</button>
+    </div>
+  </div>
+
+  <!-- Screen: Activity Monitor -->
+  <div id="screen-activity" class="container hidden">
+    <div class="card text-center" style="margin-bottom:20px;">
+      <h2 id="activityTitle"></h2>
+      <p class="text-dim">Students are working on the activity</p>
+      <p style="margin-top:8px;"><strong id="actSubmissionCount">0</strong> submissions received</p>
+    </div>
+    <div class="gallery" id="actGallery"></div>
+    <div style="margin-top:20px; text-align:center;">
+      <button class="btn btn-danger" onclick="endActivity()">⏹ End Activity</button>
+    </div>
+  </div>
+
+  <!-- Screen: Submissions -->
+  <div id="screen-submissions" class="container hidden">
+    <h2 style="margin-bottom:16px;">📊 Session Submissions</h2>
+    <div id="submissionsList"></div>
+    <div style="margin-top:20px; text-align:center;">
+      <button class="btn btn-ghost" onclick="backToLobby()">← Back to Lobby</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    let socket, sessionCode, quizTotal = 0, currentQIdx = -1, timerInterval;
+    let authenticated = false;
+
+    async function verifyPin() {
+      const pin = document.getElementById('pinInput').value;
+      const err = document.getElementById('pinError');
+      if (!pin) { err.textContent = 'Enter a PIN'; return; }
+
+      const res = await fetch('/api/auth/teacher', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin })
+      });
+
+      if (res.ok) {
+        authenticated = true;
+        sessionStorage.setItem('teacher_auth', 'true');
+        show('screen-create');
+      } else {
+        err.textContent = 'Wrong PIN. Try again.';
+        document.getElementById('pinInput').value = '';
+      }
+    }
+
+    // Auto-login if already authenticated this browser session
+    if (sessionStorage.getItem('teacher_auth') === 'true') {
+      document.getElementById('screen-login').classList.add('hidden');
+      document.getElementById('screen-create').classList.remove('hidden');
+    }
+
+    function show(id) {
+      document.querySelectorAll('[id^="screen-"]').forEach(el => el.classList.add('hidden'));
+      document.getElementById(id).classList.remove('hidden');
+    }
+
+    function toast(msg, type = 'success') {
+      const t = document.createElement('div');
+      t.className = `toast toast-${type}`;
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 3000);
+    }
+
+    function copyCode() {
+      navigator.clipboard.writeText(sessionCode).then(() => {
+        const btn = document.getElementById('copyBtn');
+        btn.textContent = '✅ Copied!';
+        setTimeout(() => { btn.textContent = '📋 Copy Code'; }, 2000);
+      });
+    }
+
+    async function createSession() {
+      const res = await fetch('/api/session/create', { method: 'POST' });
+      const data = await res.json();
+      sessionCode = data.code;
+      document.getElementById('sessionCode').textContent = sessionCode;
+      document.getElementById('navInfo').textContent = `Session: ${sessionCode}`;
+
+      socket = io();
+      socket.emit('teacher-join', sessionCode);
+      setupSocketListeners();
+      loadQuizzes();
+      show('screen-lobby');
+    }
+
+    async function loadQuizzes() {
+      const res = await fetch('/api/quizzes');
+      const quizzes = await res.json();
+      document.getElementById('quizGrid').innerHTML = quizzes.map(q => `
+        <div class="quiz-card" onclick="startQuiz('${q.id}')">
+          <div class="emoji">${q.emoji || '📝'}</div>
+          <strong>${q.title}</strong>
+          <p class="text-dim" style="font-size:.85rem;">${q.questionCount} questions</p>
+        </div>
+      `).join('');
+    }
+
+    function setupSocketListeners() {
+      socket.on('student-joined', ({ nickname, students }) => {
+        toast(`${nickname} joined!`);
+        updateStudentList(students);
+      });
+
+      socket.on('student-left', ({ nickname, students }) => {
+        toast(`${nickname} left`, 'error');
+        updateStudentList(students);
+      });
+
+      socket.on('quiz-started', ({ title, total }) => {
+        quizTotal = total;
+        currentQIdx = -1;
+        document.getElementById('quizTitle').textContent = title;
+        document.getElementById('progressDots').innerHTML = Array.from({ length: total },
+          (_, i) => `<div class="dot" id="dot-${i}"></div>`).join('');
+        document.getElementById('nextBtn').textContent = '▶ Start First Question';
+        document.getElementById('questionArea').classList.add('hidden');
+        show('screen-quiz');
+      });
+
+      socket.on('question', ({ index, q, options, time }) => {
+        currentQIdx = index;
+        document.getElementById('currentQuestion').textContent = `Q${index + 1}: ${q}`;
+        document.getElementById('teacherOptions').innerHTML = options.map((o, i) =>
+          `<div class="option-btn">${o}</div>`).join('');
+        document.getElementById('answerProgress').textContent = `0 / ${Object.keys({}).length} answered`;
+        document.getElementById('questionArea').classList.remove('hidden');
+        document.getElementById('nextBtn').textContent = '▶ Next Question';
+        if (index >= quizTotal - 1) document.getElementById('nextBtn').textContent = '🏁 Finish Quiz';
+
+        document.querySelectorAll('.dot').forEach((d, i) => {
+          d.className = 'dot' + (i < index ? ' done' : i === index ? ' active' : '');
+        });
+
+        startTimer(time);
+      });
+
+      socket.on('answer-received', ({ nickname, correct, answered, totalStudents, leaderboard }) => {
+        document.getElementById('answerProgress').textContent = `${answered} / ${totalStudents} answered`;
+        updateLeaderboard(leaderboard);
+      });
+
+      socket.on('all-answered', ({ correctAnswer, leaderboard }) => {
+        clearInterval(timerInterval);
+        highlightCorrect(correctAnswer);
+        updateLeaderboard(leaderboard);
+        document.getElementById('quizStatus').textContent = 'All students answered!';
+      });
+
+      socket.on('question-timeout', ({ correctAnswer, leaderboard }) => {
+        clearInterval(timerInterval);
+        highlightCorrect(correctAnswer);
+        updateLeaderboard(leaderboard);
+        document.getElementById('quizStatus').textContent = "Time's up!";
+      });
+
+      socket.on('quiz-ended', ({ leaderboard }) => {
+        document.getElementById('quizStatus').textContent = 'Quiz Complete! 🎉';
+        document.getElementById('questionArea').classList.add('hidden');
+        document.getElementById('nextBtn').textContent = '← Back to Lobby';
+        document.getElementById('nextBtn').onclick = () => backToLobby();
+        updateLeaderboard(leaderboard);
+        document.querySelectorAll('.dot').forEach(d => d.className = 'dot done');
+      });
+
+      socket.on('activity-submission', ({ nickname, type, data, totalSubmissions }) => {
+        document.getElementById('actSubmissionCount').textContent = totalSubmissions;
+        const gallery = document.getElementById('actGallery');
+        const item = document.createElement('div');
+        item.className = 'gallery-item';
+        if (type === 'draw') {
+          item.innerHTML = `<strong>${nickname}</strong><img src="${data}" alt="Drawing by ${nickname}">`;
+        } else {
+          item.innerHTML = `<strong>${nickname}</strong><p class="text-dim">${type} — Score: ${data.score || 'N/A'}</p>`;
+        }
+        gallery.prepend(item);
+      });
+
+      socket.on('error-msg', msg => toast(msg, 'error'));
+    }
+
+    function updateStudentList(students) {
+      const list = document.getElementById('studentList');
+      document.getElementById('studentCount').textContent = `${students.length} student${students.length !== 1 ? 's' : ''} joined`;
+      if (students.length === 0) {
+        list.innerHTML = '<p class="text-dim">Waiting for students to join...</p>';
+        return;
+      }
+      list.innerHTML = students.map(s => `<div class="student-chip">👤 ${s.nickname}</div>`).join('');
+    }
+
+    function updateLeaderboard(lb) {
+      const medals = ['🥇', '🥈', '🥉'];
+      document.getElementById('leaderboard').innerHTML = lb.map((s, i) =>
+        `<li><span><span class="rank-medal">${medals[i] || `#${i + 1}`}</span> ${s.nickname}</span><span>${s.score} pts</span></li>`
+      ).join('');
+    }
+
+    function highlightCorrect(correctIdx) {
+      const opts = document.getElementById('teacherOptions').children;
+      for (let i = 0; i < opts.length; i++) {
+        opts[i].classList.add(i === correctIdx ? 'correct' : '');
+      }
+    }
+
+    function startTimer(seconds) {
+      clearInterval(timerInterval);
+      let remaining = seconds;
+      const fill = document.getElementById('timerFill');
+      const display = document.getElementById('timerDisplay');
+      display.textContent = remaining;
+      fill.style.width = '100%';
+
+      timerInterval = setInterval(() => {
+        remaining--;
+        display.textContent = remaining;
+        fill.style.width = `${(remaining / seconds) * 100}%`;
+        if (remaining <= 0) clearInterval(timerInterval);
+      }, 1000);
+    }
+
+    function startQuiz(quizId) {
+      socket.emit('start-quiz', { code: sessionCode, quizId });
+    }
+
+    function nextQuestion() {
+      socket.emit('next-question', sessionCode);
+      document.getElementById('quizStatus').textContent = 'Question in progress...';
+    }
+
+    function startActivity(type) {
+      socket.emit('start-activity', { code: sessionCode, type });
+      document.getElementById('activityTitle').textContent = type === 'dragdrop' ? '🧩 Drag & Drop Activity' : '🎨 Drawing Activity';
+      document.getElementById('actSubmissionCount').textContent = '0';
+      document.getElementById('actGallery').innerHTML = '';
+      show('screen-activity');
+    }
+
+    function endActivity() {
+      socket.emit('end-activity', sessionCode);
+      show('screen-lobby');
+    }
+
+    function backToLobby() {
+      socket.emit('back-to-lobby', sessionCode);
+      document.getElementById('nextBtn').onclick = () => nextQuestion();
+      show('screen-lobby');
+    }
+
+    function endSession() {
+      if (!confirm('End this session? All students will be disconnected.')) return;
+      socket.emit('end-session', sessionCode);
+      sessionCode = null;
+      socket.disconnect();
+      show('screen-create');
+      document.getElementById('navInfo').textContent = '';
+    }
+
+    async function viewSubmissions() {
+      const res = await fetch(`/api/session/${sessionCode}/submissions`);
+      const subs = await res.json();
+      const container = document.getElementById('submissionsList');
+
+      if (subs.length === 0) {
+        container.innerHTML = '<div class="card text-center"><p class="text-dim">No submissions yet</p></div>';
+      } else {
+        container.innerHTML = '<div class="gallery">' + subs.map(s => {
+          let content = '';
+          if (s.type === 'draw') {
+            content = `<img src="${s.data}" alt="Drawing">`;
+          } else if (s.type === 'quiz') {
+            content = `<p>${s.data.q}</p><p>${s.data.correct ? '✅ Correct' : '❌ Wrong'} (${s.data.points} pts)</p>`;
+          } else if (s.type === 'dragdrop') {
+            content = `<p>Score: ${s.data.score}/${s.data.total}</p>`;
+          }
+          return `<div class="gallery-item"><strong>👤 ${s.student}</strong><p class="text-dim">${s.type} · ${new Date(s.ts).toLocaleTimeString()}</p>${content}</div>`;
+        }).join('') + '</div>';
+      }
+      show('screen-submissions');
+    }
+  </script>
+</body>
+</html>

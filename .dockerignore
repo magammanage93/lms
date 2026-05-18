@@ -1,0 +1,8 @@
+node_modules
+.venv
+*.pptx
+*.md
+.git
+.dockerignore
+Dockerfile
+generate_pptx.py

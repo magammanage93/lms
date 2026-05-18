@@ -1,0 +1,24 @@
+[
+  {
+    "title": "Animals & Their Sounds",
+    "emoji": "🐾",
+    "pairs": [
+      { "item": "🐶 Dog", "target": "Woof!" },
+      { "item": "🐱 Cat", "target": "Meow!" },
+      { "item": "🐄 Cow", "target": "Moo!" },
+      { "item": "🐸 Frog", "target": "Ribbit!" },
+      { "item": "🐓 Rooster", "target": "Cock-a-doodle!" }
+    ]
+  },
+  {
+    "title": "Colors & Objects",
+    "emoji": "🎨",
+    "pairs": [
+      { "item": "🍎 Apple", "target": "Red" },
+      { "item": "🍌 Banana", "target": "Yellow" },
+      { "item": "🥦 Broccoli", "target": "Green" },
+      { "item": "🫐 Blueberry", "target": "Blue" },
+      { "item": "🍊 Orange", "target": "Orange" }
+    ]
+  }
+]

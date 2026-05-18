@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Drawing Canvas - EduPlay</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="navbar">
+    <div class="brand">🎨 Drawing Canvas</div>
+    <div>
+      <button class="btn btn-accent btn-sm" onclick="submitDrawing()">Submit ✅</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="draw-toolbar" id="toolbar">
+      <span class="text-dim" style="font-weight:700; margin-right:8px;">Colors:</span>
+      <button class="color-btn active" style="background:#000000;" data-color="#000000" onclick="setColor(this)"></button>
+      <button class="color-btn" style="background:#e53e3e;" data-color="#e53e3e" onclick="setColor(this)"></button>
+      <button class="color-btn" style="background:#3182ce;" data-color="#3182ce" onclick="setColor(this)"></button>
+      <button class="color-btn" style="background:#38a169;" data-color="#38a169" onclick="setColor(this)"></button>
+      <button class="color-btn" style="background:#d69e2e;" data-color="#d69e2e" onclick="setColor(this)"></button>
+      <button class="color-btn" style="background:#9f7aea;" data-color="#9f7aea" onclick="setColor(this)"></button>
+      <button class="color-btn" style="background:#ed64a6;" data-color="#ed64a6" onclick="setColor(this)"></button>
+      <button class="color-btn" style="background:#ffffff; border:2px solid #ccc;" data-color="#ffffff" onclick="setColor(this)"></button>
+
+      <span class="text-dim" style="font-weight:700; margin:0 8px 0 16px;">Size:</span>
+      <button class="size-btn" data-size="3" onclick="setSize(this)">S</button>
+      <button class="size-btn active" data-size="6" onclick="setSize(this)">M</button>
+      <button class="size-btn" data-size="12" onclick="setSize(this)">L</button>
+      <button class="size-btn" data-size="24" onclick="setSize(this)">XL</button>
+
+      <button class="btn btn-danger btn-sm" style="margin-left:auto;" onclick="clearCanvas()">🗑 Clear</button>
+    </div>
+
+    <div style="text-align:center;">
+      <canvas id="drawCanvas" class="draw-canvas" width="800" height="500"></canvas>
+    </div>
+
+    <div id="submitted" class="hidden" style="margin-top:16px;">
+      <div class="card text-center">
+        <div style="font-size:3rem;">✅</div>
+        <h3>Response Submitted!</h3>
+        <p class="text-dim" style="margin-top:6px;">Returning to session...</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const sessionCode = params.get('code');
+    const nickname = params.get('nick');
+    const socket = io();
+
+    const canvas = document.getElementById('drawCanvas');
+    const ctx = canvas.getContext('2d');
+
+    let drawing = false;
+    let currentColor = '#000000';
+    let currentSize = 6;
+    let lastX = 0, lastY = 0;
+
+    function resizeCanvas() {
+      const container = canvas.parentElement;
+      const maxW = Math.min(800, container.clientWidth - 20);
+      canvas.style.width = maxW + 'px';
+      canvas.style.height = (maxW * 0.625) + 'px';
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    function getPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      if (e.touches) {
+        return {
+          x: (e.touches[0].clientX - rect.left) * scaleX,
+          y: (e.touches[0].clientY - rect.top) * scaleY
+        };
+      }
+      return {
+        x: (e.clientX - rect.left) * scaleX,
+        y: (e.clientY - rect.top) * scaleY
+      };
+    }
+
+    function startDraw(e) {
+      e.preventDefault();
+      drawing = true;
+      const pos = getPos(e);
+      lastX = pos.x;
+      lastY = pos.y;
+    }
+
+    function draw(e) {
+      if (!drawing) return;
+      e.preventDefault();
+      const pos = getPos(e);
+      ctx.strokeStyle = currentColor;
+      ctx.lineWidth = currentSize;
+      ctx.beginPath();
+      ctx.moveTo(lastX, lastY);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+      lastX = pos.x;
+      lastY = pos.y;
+    }
+
+    function stopDraw(e) {
+      if (e) e.preventDefault();
+      drawing = false;
+    }
+
+    canvas.addEventListener('mousedown', startDraw);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDraw);
+    canvas.addEventListener('mouseleave', stopDraw);
+    canvas.addEventListener('touchstart', startDraw, { passive: false });
+    canvas.addEventListener('touchmove', draw, { passive: false });
+    canvas.addEventListener('touchend', stopDraw);
+    canvas.addEventListener('touchcancel', stopDraw);
+
+    function setColor(btn) {
+      currentColor = btn.getAttribute('data-color');
+      document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    }
+
+    function setSize(btn) {
+      currentSize = parseInt(btn.getAttribute('data-size'));
+      document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    }
+
+    function clearCanvas() {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    function submitDrawing() {
+      const dataURL = canvas.toDataURL('image/png');
+      socket.emit('student-join', { code: sessionCode, nickname });
+      setTimeout(() => {
+        socket.emit('submit-activity', {
+          code: sessionCode,
+          type: 'draw',
+          data: dataURL
+        });
+        document.getElementById('submitted').classList.remove('hidden');
+        setTimeout(() => {
+          window.location.href = `/student.html?code=${sessionCode}&nick=${encodeURIComponent(nickname)}`;
+        }, 2000);
+      }, 500);
+    }
+  </script>
+</body>
+</html>
