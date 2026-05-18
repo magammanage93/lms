@@ -4,368 +4,335 @@ const { Server } = require('socket.io');
 const path = require('path');
 const fs = require('fs');
 
-const DATA_DIR = path.join(__dirname, 'data');
-
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+const DATA_DIR = path.join(__dirname, 'data');
 
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ── In-memory store ──
-const sessions = {};       // { code: { teacher, students, quiz, activity, ... } }
-const submissions = {};    // { code: [ { student, type, data, ts } ] }
+// ── Type-scoped sessions ──
+// Key: "{type}-{code}" e.g. "quiz-ABC123", "draw-XYZ789"
+const sessions = {};
+const submissions = {};
 
-function genCode() {
+function genCode(type) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
   for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
-  return sessions[code] ? genCode() : code;
+  const key = `${type}-${code}`;
+  return sessions[key] ? genCode(type) : code;
 }
 
-// ── REST endpoints ──
+function skey(type, code) { return `${type}-${code}`; }
 
-app.post('/api/session/create', (req, res) => {
-  const code = genCode();
-  sessions[code] = {
-    code,
-    teacherSocket: null,
-    students: {},           // { socketId: { nickname, score } }
-    quiz: null,             // { questions:[], currentQ: 0, active: false, timer: null }
-    activity: null,         // { type: 'dragdrop'|'draw', active: false }
-    state: 'lobby',         // lobby | quiz | activity | review
-    createdAt: Date.now()
-  };
-  submissions[code] = [];
-  res.json({ code });
+// ── Auth ──
+const TEACHER_PIN = process.env.TEACHER_PIN || '1234';
+app.post('/api/auth/teacher', (req, res) => {
+  if (req.body.pin === TEACHER_PIN) return res.json({ ok: true });
+  res.status(401).json({ error: 'Wrong PIN' });
 });
 
-app.get('/api/session/:code', (req, res) => {
-  const s = sessions[req.params.code.toUpperCase()];
+// ── Data loaders ──
+function loadJSON(file) {
+  return JSON.parse(fs.readFileSync(path.join(DATA_DIR, file), 'utf8'));
+}
+function saveJSON(file, data) {
+  fs.writeFileSync(path.join(DATA_DIR, file), JSON.stringify(data, null, 2), 'utf8');
+}
+
+// ── Quiz CRUD ──
+app.get('/api/quizzes', (_req, res) => {
+  const q = loadJSON('quizzes.json');
+  res.json(Object.entries(q).map(([id, v]) => ({ id, title: v.title, emoji: v.emoji || '📝', questionCount: v.questions.length })));
+});
+app.get('/api/admin/quizzes', (_req, res) => res.json(loadJSON('quizzes.json')));
+app.put('/api/admin/quizzes/:id', (req, res) => {
+  const quizzes = loadJSON('quizzes.json');
+  const { title, emoji, questions } = req.body;
+  if (!title || !questions || !Array.isArray(questions)) return res.status(400).json({ error: 'title and questions[] required' });
+  quizzes[req.params.id] = { title, emoji: emoji || '📝', questions };
+  saveJSON('quizzes.json', quizzes);
+  res.json({ ok: true });
+});
+app.delete('/api/admin/quizzes/:id', (req, res) => {
+  const quizzes = loadJSON('quizzes.json');
+  if (!quizzes[req.params.id]) return res.status(404).json({ error: 'Not found' });
+  delete quizzes[req.params.id];
+  saveJSON('quizzes.json', quizzes);
+  res.json({ ok: true });
+});
+
+// ── Puzzle CRUD ──
+app.get('/api/puzzles', (_req, res) => res.json(loadJSON('puzzles.json')));
+app.get('/api/admin/puzzles', (_req, res) => res.json(loadJSON('puzzles.json')));
+app.put('/api/admin/puzzles/:index', (req, res) => {
+  const puzzles = loadJSON('puzzles.json');
+  const idx = parseInt(req.params.index);
+  const { title, emoji, pairs } = req.body;
+  if (!title || !pairs || !Array.isArray(pairs)) return res.status(400).json({ error: 'title and pairs[] required' });
+  const puzzle = { title, emoji: emoji || '🧩', pairs };
+  if (idx >= 0 && idx < puzzles.length) puzzles[idx] = puzzle; else puzzles.push(puzzle);
+  saveJSON('puzzles.json', puzzles);
+  res.json({ ok: true });
+});
+app.delete('/api/admin/puzzles/:index', (req, res) => {
+  const puzzles = loadJSON('puzzles.json');
+  const idx = parseInt(req.params.index);
+  if (idx < 0 || idx >= puzzles.length) return res.status(404).json({ error: 'Not found' });
+  puzzles.splice(idx, 1);
+  saveJSON('puzzles.json', puzzles);
+  res.json({ ok: true });
+});
+
+// ── Flashcard CRUD ──
+app.get('/api/flashcards', (_req, res) => {
+  const fc = loadJSON('flashcards.json');
+  res.json(Object.entries(fc).map(([id, v]) => ({ id, title: v.title, emoji: v.emoji || '🃏', cardCount: v.cards.length })));
+});
+app.get('/api/admin/flashcards', (_req, res) => res.json(loadJSON('flashcards.json')));
+app.put('/api/admin/flashcards/:id', (req, res) => {
+  const decks = loadJSON('flashcards.json');
+  const { title, emoji, cards } = req.body;
+  if (!title || !cards || !Array.isArray(cards)) return res.status(400).json({ error: 'title and cards[] required' });
+  decks[req.params.id] = { title, emoji: emoji || '🃏', cards };
+  saveJSON('flashcards.json', decks);
+  res.json({ ok: true });
+});
+app.delete('/api/admin/flashcards/:id', (req, res) => {
+  const decks = loadJSON('flashcards.json');
+  if (!decks[req.params.id]) return res.status(404).json({ error: 'Not found' });
+  delete decks[req.params.id];
+  saveJSON('flashcards.json', decks);
+  res.json({ ok: true });
+});
+
+// ── Session endpoints (generic, type-scoped) ──
+app.post('/api/session/create', (req, res) => {
+  const { type } = req.body;
+  if (!['quiz', 'dragdrop', 'draw', 'flashcard'].includes(type)) return res.status(400).json({ error: 'Invalid type' });
+  const code = genCode(type);
+  const key = skey(type, code);
+  sessions[key] = {
+    type, code, teacherSocket: null,
+    students: {}, quiz: null, activity: null, flashcard: null,
+    state: 'lobby', createdAt: Date.now()
+  };
+  submissions[key] = [];
+  res.json({ code, type });
+});
+
+app.get('/api/session/:type/:code', (req, res) => {
+  const s = sessions[skey(req.params.type, req.params.code.toUpperCase())];
   if (!s) return res.status(404).json({ error: 'Session not found' });
   res.json({
-    code: s.code,
-    state: s.state,
+    code: s.code, type: s.type, state: s.state,
     studentCount: Object.keys(s.students).length,
     students: Object.values(s.students).map(st => ({ nickname: st.nickname, score: st.score }))
   });
 });
 
-app.get('/api/session/:code/submissions', (req, res) => {
-  const code = req.params.code.toUpperCase();
-  if (!sessions[code]) return res.status(404).json({ error: 'Session not found' });
-  res.json(submissions[code] || []);
+app.get('/api/session/:type/:code/submissions', (req, res) => {
+  const key = skey(req.params.type, req.params.code.toUpperCase());
+  if (!sessions[key]) return res.status(404).json({ error: 'Session not found' });
+  res.json(submissions[key] || []);
 });
 
-// ── Data loading (reads from data/*.json on every request — edit files, changes apply instantly) ──
-
-function loadQuizzes() {
-  return JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'quizzes.json'), 'utf8'));
-}
-
-function loadPuzzles() {
-  return JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'puzzles.json'), 'utf8'));
-}
-
-app.get('/api/quizzes', (_req, res) => {
-  const quizzes = loadQuizzes();
-  const list = Object.entries(quizzes).map(([key, q]) => ({
-    id: key, title: q.title, emoji: q.emoji || '📝', questionCount: q.questions.length
-  }));
-  res.json(list);
-});
-
-app.get('/api/puzzles', (_req, res) => {
-  res.json(loadPuzzles());
-});
-
-// ── Teacher auth ──
-
-const TEACHER_PIN = process.env.TEACHER_PIN || '1234';
-
-app.post('/api/auth/teacher', (req, res) => {
-  const { pin } = req.body;
-  if (pin === TEACHER_PIN) {
-    res.json({ ok: true });
-  } else {
-    res.status(401).json({ error: 'Wrong PIN' });
-  }
-});
-
-// ── Admin CRUD endpoints ──
-
-function saveQuizzes(data) {
-  fs.writeFileSync(path.join(DATA_DIR, 'quizzes.json'), JSON.stringify(data, null, 2), 'utf8');
-}
-
-function savePuzzles(data) {
-  fs.writeFileSync(path.join(DATA_DIR, 'puzzles.json'), JSON.stringify(data, null, 2), 'utf8');
-}
-
-app.get('/api/admin/quizzes', (_req, res) => {
-  res.json(loadQuizzes());
-});
-
-app.put('/api/admin/quizzes/:id', (req, res) => {
-  const quizzes = loadQuizzes();
-  const id = req.params.id;
-  const { title, emoji, questions } = req.body;
-  if (!title || !questions || !Array.isArray(questions)) {
-    return res.status(400).json({ error: 'title and questions[] are required' });
-  }
-  quizzes[id] = { title, emoji: emoji || '📝', questions };
-  saveQuizzes(quizzes);
-  res.json({ ok: true, id });
-});
-
-app.delete('/api/admin/quizzes/:id', (req, res) => {
-  const quizzes = loadQuizzes();
-  const id = req.params.id;
-  if (!quizzes[id]) return res.status(404).json({ error: 'Quiz not found' });
-  delete quizzes[id];
-  saveQuizzes(quizzes);
-  res.json({ ok: true });
-});
-
-app.get('/api/admin/puzzles', (_req, res) => {
-  res.json(loadPuzzles());
-});
-
-app.put('/api/admin/puzzles/:index', (req, res) => {
-  const puzzles = loadPuzzles();
-  const idx = parseInt(req.params.index);
-  const { title, emoji, pairs } = req.body;
-  if (!title || !pairs || !Array.isArray(pairs)) {
-    return res.status(400).json({ error: 'title and pairs[] are required' });
-  }
-  const puzzle = { title, emoji: emoji || '🧩', pairs };
-  if (idx >= 0 && idx < puzzles.length) {
-    puzzles[idx] = puzzle;
-  } else {
-    puzzles.push(puzzle);
-  }
-  savePuzzles(puzzles);
-  res.json({ ok: true, index: idx >= 0 && idx < puzzles.length ? idx : puzzles.length - 1 });
-});
-
-app.delete('/api/admin/puzzles/:index', (req, res) => {
-  const puzzles = loadPuzzles();
-  const idx = parseInt(req.params.index);
-  if (idx < 0 || idx >= puzzles.length) return res.status(404).json({ error: 'Puzzle not found' });
-  puzzles.splice(idx, 1);
-  savePuzzles(puzzles);
-  res.json({ ok: true });
-});
-
-// ── Socket.io real-time ──
-
+// ── Socket.io ──
 io.on('connection', (socket) => {
-  console.log(`[connect] ${socket.id}`);
-
-  // Teacher joins session
-  socket.on('teacher-join', (code) => {
-    const s = sessions[code];
+  // Teacher joins
+  socket.on('teacher-join', ({ type, code }) => {
+    const s = sessions[skey(type, code)];
     if (!s) return socket.emit('error-msg', 'Session not found');
     s.teacherSocket = socket.id;
-    socket.join(`session-${code}`);
-    socket.join(`teacher-${code}`);
-    socket.emit('session-joined', { code, students: Object.values(s.students) });
-    console.log(`[teacher-join] ${code}`);
+    socket.join(`session-${type}-${code}`);
+    socket.join(`teacher-${type}-${code}`);
+    socket.emit('session-joined', { code, type, students: Object.values(s.students) });
   });
 
-  // Student joins session
-  socket.on('student-join', ({ code, nickname }) => {
-    const s = sessions[code];
+  // Student joins
+  socket.on('student-join', ({ type, code, nickname }) => {
+    const key = skey(type, code);
+    const s = sessions[key];
     if (!s) return socket.emit('error-msg', 'Session not found');
-    if (s.state !== 'lobby' && s.state !== 'quiz' && s.state !== 'activity') {
-      return socket.emit('error-msg', 'Session is not accepting students');
-    }
     const existing = Object.values(s.students).find(st => st.nickname === nickname);
     if (existing) return socket.emit('error-msg', 'Nickname already taken');
 
     s.students[socket.id] = { nickname, score: 0, answers: [] };
-    socket.join(`session-${code}`);
-    socket.studentCode = code;
+    socket.join(`session-${type}-${code}`);
+    socket.sessionKey = key;
+    socket.sessionType = type;
+    socket.sessionCode = code;
     socket.studentNick = nickname;
 
-    socket.emit('join-success', { code, nickname, state: s.state });
-    io.to(`teacher-${code}`).emit('student-joined', {
+    socket.emit('join-success', { code, type, nickname, state: s.state });
+    io.to(`teacher-${type}-${code}`).emit('student-joined', {
       nickname,
       students: Object.values(s.students).map(st => ({ nickname: st.nickname, score: st.score }))
     });
-    console.log(`[student-join] ${nickname} → ${code}`);
   });
 
-  // Teacher starts quiz
-  socket.on('start-quiz', ({ code, quizId }) => {
-    const s = sessions[code];
+  // ── QUIZ events ──
+  socket.on('start-quiz', ({ type, code, quizId }) => {
+    const s = sessions[skey(type, code)];
     if (!s) return;
-    const quizData = loadQuizzes()[quizId];
+    const quizData = loadJSON('quizzes.json')[quizId];
     if (!quizData) return socket.emit('error-msg', 'Quiz not found');
-
     s.quiz = { ...quizData, currentQ: -1, active: true, answeredThisQ: new Set() };
     s.state = 'quiz';
     Object.values(s.students).forEach(st => { st.score = 0; st.answers = []; });
-    io.to(`session-${code}`).emit('quiz-started', { title: quizData.title, total: quizData.questions.length });
-    console.log(`[quiz-start] ${code} → ${quizId}`);
+    io.to(`session-${type}-${code}`).emit('quiz-started', { title: quizData.title, total: quizData.questions.length });
   });
 
-  // Teacher advances to next question
-  socket.on('next-question', (code) => {
-    const s = sessions[code];
+  socket.on('next-question', ({ type, code }) => {
+    const s = sessions[skey(type, code)];
     if (!s || !s.quiz) return;
-
     s.quiz.currentQ++;
     s.quiz.answeredThisQ = new Set();
     const idx = s.quiz.currentQ;
-
     if (idx >= s.quiz.questions.length) {
-      s.state = 'review';
-      s.quiz.active = false;
-      const leaderboard = Object.values(s.students)
-        .map(st => ({ nickname: st.nickname, score: st.score }))
-        .sort((a, b) => b.score - a.score);
-      io.to(`session-${code}`).emit('quiz-ended', { leaderboard });
+      s.state = 'review'; s.quiz.active = false;
+      const lb = Object.values(s.students).map(st => ({ nickname: st.nickname, score: st.score })).sort((a, b) => b.score - a.score);
+      io.to(`session-${type}-${code}`).emit('quiz-ended', { leaderboard: lb });
       return;
     }
-
     const question = s.quiz.questions[idx];
-    const payload = { index: idx, q: question.q, options: question.options, time: question.time, total: s.quiz.questions.length };
-    io.to(`session-${code}`).emit('question', payload);
-
+    io.to(`session-${type}-${code}`).emit('question', { index: idx, q: question.q, options: question.options, time: question.time, total: s.quiz.questions.length });
     if (s.quiz.timer) clearTimeout(s.quiz.timer);
     s.quiz.timer = setTimeout(() => {
-      const leaderboard = Object.values(s.students)
-        .map(st => ({ nickname: st.nickname, score: st.score }))
-        .sort((a, b) => b.score - a.score);
-      io.to(`session-${code}`).emit('question-timeout', {
-        correctAnswer: question.answer,
-        leaderboard
-      });
+      const lb = Object.values(s.students).map(st => ({ nickname: st.nickname, score: st.score })).sort((a, b) => b.score - a.score);
+      io.to(`session-${type}-${code}`).emit('question-timeout', { correctAnswer: question.answer, leaderboard: lb });
     }, question.time * 1000);
   });
 
-  // Student submits answer
-  socket.on('submit-answer', ({ code, questionIndex, answerIndex, timeLeft }) => {
-    const s = sessions[code];
+  socket.on('submit-answer', ({ type, code, questionIndex, answerIndex, timeLeft }) => {
+    const key = skey(type, code);
+    const s = sessions[key];
     if (!s || !s.quiz || !s.quiz.active) return;
     if (s.quiz.currentQ !== questionIndex) return;
     if (s.quiz.answeredThisQ.has(socket.id)) return;
-
     s.quiz.answeredThisQ.add(socket.id);
     const student = s.students[socket.id];
     if (!student) return;
-
     const question = s.quiz.questions[questionIndex];
     const correct = answerIndex === question.answer;
     const points = correct ? 100 + (timeLeft * 10) : 0;
     if (correct) student.score += points;
-
     student.answers.push({ questionIndex, answerIndex, correct, points });
-
     socket.emit('answer-result', { correct, points, totalScore: student.score, correctAnswer: question.answer });
-
-    submissions[code].push({
-      student: student.nickname, type: 'quiz',
-      data: { questionIndex, q: question.q, answerIndex, correct, points }, ts: Date.now()
-    });
-
+    submissions[key].push({ student: student.nickname, type: 'quiz', data: { questionIndex, q: question.q, answerIndex, correct, points }, ts: Date.now() });
     const totalStudents = Object.keys(s.students).length;
     const answered = s.quiz.answeredThisQ.size;
-    io.to(`teacher-${code}`).emit('answer-received', {
+    io.to(`teacher-${type}-${code}`).emit('answer-received', {
       nickname: student.nickname, correct, answered, totalStudents,
-      leaderboard: Object.values(s.students)
-        .map(st => ({ nickname: st.nickname, score: st.score }))
-        .sort((a, b) => b.score - a.score)
+      leaderboard: Object.values(s.students).map(st => ({ nickname: st.nickname, score: st.score })).sort((a, b) => b.score - a.score)
     });
-
     if (answered >= totalStudents) {
       if (s.quiz.timer) clearTimeout(s.quiz.timer);
-      const leaderboard = Object.values(s.students)
-        .map(st => ({ nickname: st.nickname, score: st.score }))
-        .sort((a, b) => b.score - a.score);
-      io.to(`session-${code}`).emit('all-answered', {
-        correctAnswer: question.answer, leaderboard
-      });
+      const lb = Object.values(s.students).map(st => ({ nickname: st.nickname, score: st.score })).sort((a, b) => b.score - a.score);
+      io.to(`session-${type}-${code}`).emit('all-answered', { correctAnswer: question.answer, leaderboard: lb });
     }
   });
 
-  // Teacher starts activity
-  socket.on('start-activity', ({ code, type }) => {
-    const s = sessions[code];
+  // ── ACTIVITY events (dragdrop, draw) ──
+  socket.on('start-activity', ({ type, code }) => {
+    const s = sessions[skey(type, code)];
     if (!s) return;
-    s.activity = { type, active: true };
     s.state = 'activity';
-    io.to(`session-${code}`).emit('activity-started', { type });
-    console.log(`[activity-start] ${code} → ${type}`);
+    io.to(`session-${type}-${code}`).emit('activity-started');
   });
 
-  // Student submits activity result
-  socket.on('submit-activity', ({ code, type, data }) => {
-    const s = sessions[code];
+  socket.on('submit-activity', ({ type, code, activityType, data }) => {
+    const key = skey(type, code);
+    const s = sessions[key];
     if (!s) return;
     const student = s.students[socket.id];
     if (!student) return;
-
-    submissions[code].push({ student: student.nickname, type, data, ts: Date.now() });
+    submissions[key].push({ student: student.nickname, type: activityType || type, data, ts: Date.now() });
     socket.emit('activity-submitted');
-    io.to(`teacher-${code}`).emit('activity-submission', {
-      nickname: student.nickname, type, data,
-      totalSubmissions: submissions[code].filter(sub => sub.type === type).length
+    io.to(`teacher-${type}-${code}`).emit('activity-submission', {
+      nickname: student.nickname, type: activityType || type, data,
+      totalSubmissions: submissions[key].length
     });
-    console.log(`[activity-submit] ${student.nickname} → ${type}`);
   });
 
-  // Teacher ends activity
-  socket.on('end-activity', (code) => {
-    const s = sessions[code];
+  socket.on('end-activity', ({ type, code }) => {
+    const s = sessions[skey(type, code)];
     if (!s) return;
     s.state = 'lobby';
-    s.activity = null;
-    io.to(`session-${code}`).emit('activity-ended');
+    io.to(`session-${type}-${code}`).emit('activity-ended');
   });
 
-  // Teacher returns to lobby
-  socket.on('back-to-lobby', (code) => {
-    const s = sessions[code];
+  // ── FLASHCARD events ──
+  socket.on('start-flashcard', ({ type, code, deckId }) => {
+    const s = sessions[skey(type, code)];
     if (!s) return;
-    s.state = 'lobby';
-    s.quiz = null;
-    s.activity = null;
-    io.to(`session-${code}`).emit('back-to-lobby');
+    const deck = loadJSON('flashcards.json')[deckId];
+    if (!deck) return socket.emit('error-msg', 'Deck not found');
+    s.flashcard = { ...deck, currentCard: -1 };
+    s.state = 'flashcard';
+    io.to(`session-${type}-${code}`).emit('flashcard-started', { title: deck.title, total: deck.cards.length });
   });
 
-  // Teacher ends entire session
-  socket.on('end-session', (code) => {
-    const s = sessions[code];
+  socket.on('flashcard-navigate', ({ type, code, cardIndex, showBack }) => {
+    const s = sessions[skey(type, code)];
+    if (!s || !s.flashcard) return;
+    s.flashcard.currentCard = cardIndex;
+    const card = s.flashcard.cards[cardIndex];
+    if (!card) return;
+    io.to(`session-${type}-${code}`).emit('flashcard-update', {
+      index: cardIndex, front: card.front, back: showBack ? card.back : null,
+      total: s.flashcard.cards.length, showBack
+    });
+  });
+
+  socket.on('flashcard-flip', ({ type, code }) => {
+    const s = sessions[skey(type, code)];
+    if (!s || !s.flashcard) return;
+    const idx = s.flashcard.currentCard;
+    const card = s.flashcard.cards[idx];
+    if (!card) return;
+    io.to(`session-${type}-${code}`).emit('flashcard-update', {
+      index: idx, front: card.front, back: card.back,
+      total: s.flashcard.cards.length, showBack: true
+    });
+  });
+
+  // ── Common events ──
+  socket.on('back-to-lobby', ({ type, code }) => {
+    const s = sessions[skey(type, code)];
+    if (!s) return;
+    s.state = 'lobby'; s.quiz = null; s.flashcard = null;
+    io.to(`session-${type}-${code}`).emit('back-to-lobby');
+  });
+
+  socket.on('end-session', ({ type, code }) => {
+    const key = skey(type, code);
+    const s = sessions[key];
     if (!s) return;
     if (s.quiz && s.quiz.timer) clearTimeout(s.quiz.timer);
-    io.to(`session-${code}`).emit('session-ended');
-    // Disconnect all sockets in the session room
-    io.in(`session-${code}`).socketsLeave(`session-${code}`);
-    io.in(`teacher-${code}`).socketsLeave(`teacher-${code}`);
-    delete sessions[code];
-    console.log(`[session-end] ${code}`);
+    io.to(`session-${type}-${code}`).emit('session-ended');
+    io.in(`session-${type}-${code}`).socketsLeave(`session-${type}-${code}`);
+    io.in(`teacher-${type}-${code}`).socketsLeave(`teacher-${type}-${code}`);
+    delete sessions[key];
   });
 
   socket.on('disconnect', () => {
-    const code = socket.studentCode;
-    if (code && sessions[code]) {
-      const student = sessions[code].students[socket.id];
+    const key = socket.sessionKey;
+    if (key && sessions[key]) {
+      const student = sessions[key].students[socket.id];
       if (student) {
-        delete sessions[code].students[socket.id];
-        io.to(`teacher-${code}`).emit('student-left', {
+        delete sessions[key].students[socket.id];
+        const s = sessions[key];
+        io.to(`teacher-${s.type}-${s.code}`).emit('student-left', {
           nickname: student.nickname,
-          students: Object.values(sessions[code].students).map(st => ({ nickname: st.nickname, score: st.score }))
+          students: Object.values(s.students).map(st => ({ nickname: st.nickname, score: st.score }))
         });
       }
     }
-    console.log(`[disconnect] ${socket.id}`);
   });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`edu-platform running on http://0.0.0.0:${PORT}`);
-});
+server.listen(PORT, '0.0.0.0', () => console.log(`edu-platform running on http://0.0.0.0:${PORT}`));

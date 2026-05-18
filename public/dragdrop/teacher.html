@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Drag & Drop Teacher - EduPlay</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="navbar">
+    <div class="brand">🧩 Drag & Drop <span class="text-dim" style="font-size:.8rem;">Teacher</span></div>
+    <div class="session-info" id="navInfo"></div>
+  </div>
+
+  <!-- PIN Login -->
+  <div id="screen-login" class="container flex-center" style="min-height:80vh; gap:24px;">
+    <div class="emoji-big">🔒</div>
+    <h1>Teacher Login</h1>
+    <p class="text-dim">Enter your teacher PIN to continue</p>
+    <div class="card flex-center gap-md" style="max-width:360px;">
+      <input type="password" id="pinInput" class="code-input" placeholder="••••" maxlength="20" autocomplete="off"
+        onkeydown="if(event.key==='Enter') verifyPin()">
+      <button class="btn btn-primary btn-block" onclick="verifyPin()">Enter</button>
+      <p id="pinError" style="color:var(--danger); font-weight:600;"></p>
+    </div>
+    <a href="/" class="btn btn-ghost btn-sm">← Back to Home</a>
+  </div>
+
+  <!-- Create Session -->
+  <div id="screen-create" class="container flex-center hidden" style="min-height:80vh; gap:24px;">
+    <div class="emoji-big">🧩</div>
+    <h1>Drag & Drop Dashboard</h1>
+    <p class="text-dim">Create a drag & drop session for your class</p>
+    <button class="btn btn-primary btn-lg" onclick="createSession()">Create Session</button>
+    <a href="/" class="btn btn-ghost btn-sm">← Back to Home</a>
+  </div>
+
+  <!-- Lobby -->
+  <div id="screen-lobby" class="container hidden">
+    <div class="text-center" style="margin-bottom:24px;">
+      <p class="text-dim">Share this code with your students:</p>
+      <div class="session-code" id="sessionCode" style="cursor:pointer;" onclick="copyCode()" title="Click to copy"></div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:8px;" onclick="copyCode()" id="copyBtn">📋 Copy Code</button>
+      <p class="text-dim" style="margin-top:6px;" id="studentCount">0 students joined</p>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <h3>Students in Room</h3>
+      <div class="student-list" id="studentList">
+        <p class="text-dim">Waiting for students to join...</p>
+      </div>
+    </div>
+
+    <div style="text-align:center; margin-bottom:20px;">
+      <button class="btn btn-accent btn-lg" onclick="startActivity()">▶ Start Drag & Drop Activity</button>
+      <p class="text-dim" style="margin-top:8px; font-size:.85rem;">Students will get a random puzzle to solve</p>
+    </div>
+
+    <div style="margin-top:24px; text-align:center; display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+      <a href="/admin.html" class="btn btn-ghost btn-sm">⚙️ Edit Puzzles</a>
+      <button class="btn btn-danger btn-sm" onclick="endSession()">⏹ End Session</button>
+    </div>
+  </div>
+
+  <!-- Activity Monitor -->
+  <div id="screen-activity" class="container hidden">
+    <div class="card text-center" style="margin-bottom:20px;">
+      <h2>🧩 Drag & Drop Activity</h2>
+      <p class="text-dim">Students are working on the activity</p>
+      <p style="margin-top:8px;"><strong id="actSubmissionCount">0</strong> submissions received</p>
+    </div>
+    <div class="gallery" id="actGallery"></div>
+    <div style="margin-top:20px; text-align:center; display:flex; gap:12px; justify-content:center;">
+      <button class="btn btn-danger" onclick="endActivity()">⏹ End Activity</button>
+      <button class="btn btn-ghost" onclick="backToLobby()">← Back to Lobby</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const TYPE = 'dragdrop';
+    let socket, sessionCode;
+
+    async function verifyPin() {
+      const pin = document.getElementById('pinInput').value;
+      const err = document.getElementById('pinError');
+      if (!pin) { err.textContent = 'Enter a PIN'; return; }
+      const res = await fetch('/api/auth/teacher', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }) });
+      if (res.ok) { sessionStorage.setItem('teacher_auth', 'true'); show('screen-create'); }
+      else { err.textContent = 'Wrong PIN. Try again.'; document.getElementById('pinInput').value = ''; }
+    }
+    if (sessionStorage.getItem('teacher_auth') === 'true') {
+      document.getElementById('screen-login').classList.add('hidden');
+      document.getElementById('screen-create').classList.remove('hidden');
+    }
+
+    function show(id) { document.querySelectorAll('[id^="screen-"]').forEach(el => el.classList.add('hidden')); document.getElementById(id).classList.remove('hidden'); }
+    function toast(msg, type = 'success') { const t = document.createElement('div'); t.className = `toast toast-${type}`; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); }
+    function copyCode() {
+      navigator.clipboard.writeText(sessionCode).then(() => {
+        const btn = document.getElementById('copyBtn'); btn.textContent = '✅ Copied!'; setTimeout(() => { btn.textContent = '📋 Copy Code'; }, 2000);
+      });
+    }
+
+    async function createSession() {
+      const res = await fetch('/api/session/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: TYPE }) });
+      const data = await res.json();
+      sessionCode = data.code;
+      document.getElementById('sessionCode').textContent = sessionCode;
+      document.getElementById('navInfo').textContent = `Session: ${sessionCode}`;
+      socket = io();
+      socket.emit('teacher-join', { type: TYPE, code: sessionCode });
+      setupSocketListeners();
+      show('screen-lobby');
+    }
+
+    function setupSocketListeners() {
+      socket.on('student-joined', ({ nickname, students }) => { toast(`${nickname} joined!`); updateStudentList(students); });
+      socket.on('student-left', ({ nickname, students }) => { toast(`${nickname} left`, 'error'); updateStudentList(students); });
+      socket.on('activity-submission', ({ nickname, data, totalSubmissions }) => {
+        document.getElementById('actSubmissionCount').textContent = totalSubmissions;
+        const gallery = document.getElementById('actGallery');
+        const item = document.createElement('div'); item.className = 'gallery-item';
+        const results = (data.results || []).map(r => `<div>${r.correct ? '✅' : '❌'} ${r.item} → ${r.placedOn}</div>`).join('');
+        item.innerHTML = `<strong>👤 ${nickname}</strong><p style="font-size:1.2rem; font-weight:800; color:var(--accent);">${data.score}/${data.total}</p>${results}`;
+        gallery.prepend(item);
+      });
+      socket.on('error-msg', msg => toast(msg, 'error'));
+      socket.on('session-ended', () => { show('screen-create'); document.getElementById('navInfo').textContent = ''; });
+    }
+
+    function updateStudentList(students) {
+      const list = document.getElementById('studentList');
+      document.getElementById('studentCount').textContent = `${students.length} student${students.length !== 1 ? 's' : ''} joined`;
+      list.innerHTML = students.length === 0 ? '<p class="text-dim">Waiting for students to join...</p>' :
+        students.map(s => `<div class="student-chip">👤 ${s.nickname}</div>`).join('');
+    }
+
+    function startActivity() { socket.emit('start-activity', { type: TYPE, code: sessionCode }); document.getElementById('actSubmissionCount').textContent = '0'; document.getElementById('actGallery').innerHTML = ''; show('screen-activity'); }
+    function endActivity() { socket.emit('end-activity', { type: TYPE, code: sessionCode }); show('screen-lobby'); }
+    function backToLobby() { socket.emit('back-to-lobby', { type: TYPE, code: sessionCode }); show('screen-lobby'); }
+    function endSession() {
+      if (!confirm('End this session?')) return;
+      socket.emit('end-session', { type: TYPE, code: sessionCode }); sessionCode = null; socket.disconnect(); show('screen-create'); document.getElementById('navInfo').textContent = '';
+    }
+  </script>
+</body>
+</html>

@@ -3,31 +3,89 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EduPlay - Interactive Learning</title>
+  <title>EduPlay - Interactive Learning Platform</title>
   <link rel="stylesheet" href="/style.css">
+  <style>
+    .hero { text-align: center; padding: 40px 0 30px; }
+    .hero h1 { font-size: 2.5rem; }
+    .hero p { font-size: 1.1rem; max-width: 500px; margin: 8px auto 0; }
+    .section-title { font-size: 1.1rem; font-weight: 700; color: var(--text-dim); margin-bottom: 16px; text-transform: uppercase; letter-spacing: 2px; }
+    .hub-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px; }
+    .hub-card {
+      background: var(--surface); border: 2px solid rgba(255,255,255,.08);
+      border-radius: var(--radius); padding: 28px 20px; text-align: center;
+      cursor: pointer; transition: all .25s; text-decoration: none; color: var(--text);
+    }
+    .hub-card:hover { border-color: var(--primary); transform: translateY(-4px); box-shadow: 0 8px 30px rgba(124,58,237,.2); }
+    .hub-card .icon { font-size: 3rem; display: block; margin-bottom: 10px; }
+    .hub-card strong { font-size: 1.15rem; display: block; margin-bottom: 4px; }
+    .hub-card p { color: var(--text-dim); font-size: .85rem; margin: 0; }
+    .divider { border: none; border-top: 1px solid rgba(255,255,255,.06); margin: 8px 0 24px; }
+    .admin-row { text-align: center; margin-top: 16px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    @media (max-width: 500px) { .hub-grid { grid-template-columns: 1fr; } .hero h1 { font-size: 1.8rem; } }
+  </style>
 </head>
 <body>
-  <div class="container flex-center" style="min-height:100vh; gap:32px;">
-    <div class="text-center">
-      <div class="emoji-big">🎓</div>
+  <div class="container">
+    <div class="hero">
+      <div style="font-size: 4rem;">🎓</div>
       <h1>EduPlay</h1>
-      <p class="text-dim" style="margin-top:8px;">Interactive Classroom Learning Platform</p>
+      <p class="text-dim">Choose an activity to get started</p>
     </div>
 
-    <div style="display:flex; gap:16px; flex-wrap:wrap; justify-content:center;">
-      <a href="/teacher.html" class="btn btn-primary btn-lg">👩‍🏫 I'm a Teacher</a>
-      <a href="/student.html" class="btn btn-accent btn-lg">👨‍🎓 I'm a Student</a>
+    <div class="section-title">👩‍🏫 Teacher Dashboards</div>
+    <div class="hub-grid">
+      <a class="hub-card" href="/quiz/teacher.html">
+        <span class="icon">📝</span>
+        <strong>Quiz</strong>
+        <p>Live multiple-choice quizzes</p>
+      </a>
+      <a class="hub-card" href="/dragdrop/teacher.html">
+        <span class="icon">🧩</span>
+        <strong>Drag & Drop</strong>
+        <p>Matching pair puzzles</p>
+      </a>
+      <a class="hub-card" href="/draw/teacher.html">
+        <span class="icon">🎨</span>
+        <strong>Drawing</strong>
+        <p>Free drawing canvas</p>
+      </a>
+      <a class="hub-card" href="/flashcard/teacher.html">
+        <span class="icon">🃏</span>
+        <strong>Flashcards</strong>
+        <p>Interactive card decks</p>
+      </a>
     </div>
-    <a href="/admin.html" class="btn btn-ghost btn-sm">⚙️ Content Manager</a>
 
-    <div class="card text-center" style="max-width:500px;">
-      <h3>How it works</h3>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px; text-align:left;">
-        <div><strong>📋 Create</strong><br><span class="text-dim">Teacher creates a live session</span></div>
-        <div><strong>🔗 Join</strong><br><span class="text-dim">Students join with a code</span></div>
-        <div><strong>🎮 Play</strong><br><span class="text-dim">Quizzes, games & drawing</span></div>
-        <div><strong>🏆 Learn</strong><br><span class="text-dim">Real-time leaderboard & review</span></div>
-      </div>
+    <hr class="divider">
+
+    <div class="section-title">👨‍🎓 Student Join</div>
+    <div class="hub-grid">
+      <a class="hub-card" href="/quiz/student.html">
+        <span class="icon">📝</span>
+        <strong>Join Quiz</strong>
+        <p>Enter your session code</p>
+      </a>
+      <a class="hub-card" href="/dragdrop/student.html">
+        <span class="icon">🧩</span>
+        <strong>Join Drag & Drop</strong>
+        <p>Enter your session code</p>
+      </a>
+      <a class="hub-card" href="/draw/student.html">
+        <span class="icon">🎨</span>
+        <strong>Join Drawing</strong>
+        <p>Enter your session code</p>
+      </a>
+      <a class="hub-card" href="/flashcard/student.html">
+        <span class="icon">🃏</span>
+        <strong>Join Flashcards</strong>
+        <p>Enter your session code</p>
+      </a>
+    </div>
+
+    <hr class="divider">
+    <div class="admin-row">
+      <a href="/admin.html" class="btn btn-ghost btn-sm">⚙️ Content Manager</a>
     </div>
   </div>
 </body>

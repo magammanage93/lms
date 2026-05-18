@@ -1,0 +1,35 @@
+{
+  "animals": {
+    "title": "Animal Facts",
+    "emoji": "🐾",
+    "cards": [
+      { "front": "🐘 Elephant", "back": "The largest land animal. They can weigh up to 6,000 kg!" },
+      { "front": "🐬 Dolphin", "back": "Dolphins sleep with one eye open and one half of their brain awake." },
+      { "front": "🦒 Giraffe", "back": "A giraffe's tongue can be up to 50 cm long!" },
+      { "front": "🐧 Penguin", "back": "Penguins can't fly, but they are excellent swimmers." },
+      { "front": "🐝 Bee", "back": "Bees communicate by dancing! It's called the waggle dance." }
+    ]
+  },
+  "solar-system": {
+    "title": "Solar System",
+    "emoji": "🌍",
+    "cards": [
+      { "front": "☀️ Sun", "back": "A star at the center of our solar system. It is about 4.6 billion years old." },
+      { "front": "🪐 Saturn", "back": "Known for its beautiful rings made of ice and rock." },
+      { "front": "🔴 Mars", "back": "Called the Red Planet because of iron oxide on its surface." },
+      { "front": "🌕 Moon", "back": "Earth's only natural satellite. It takes 27.3 days to orbit Earth." },
+      { "front": "🌊 Neptune", "back": "The farthest planet from the Sun. It has the strongest winds in the solar system." }
+    ]
+  },
+  "vocabulary": {
+    "title": "Big Words for Kids",
+    "emoji": "📖",
+    "cards": [
+      { "front": "Enormous", "back": "Very, very big! Example: The elephant was enormous." },
+      { "front": "Curious", "back": "Wanting to learn or know something. Example: The curious cat explored the box." },
+      { "front": "Brave", "back": "Not afraid of danger. Example: The brave firefighter saved the kitten." },
+      { "front": "Magnificent", "back": "Extremely beautiful or impressive. Example: The sunset was magnificent." },
+      { "front": "Perseverance", "back": "Continuing to try even when things are hard. Example: Her perseverance helped her win." }
+    ]
+  }
+}

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flashcard Student - EduPlay</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .fc-display { perspective: 800px; margin: 24px auto; max-width: 500px; }
+    .fc-card {
+      background: var(--card); border-radius: var(--radius); padding: 40px 32px;
+      text-align: center; min-height: 220px; display: flex; flex-direction: column;
+      justify-content: center; align-items: center; box-shadow: var(--shadow);
+      border: 3px solid rgba(255,255,255,.08); transition: border-color .3s;
+    }
+    .fc-card .front-text { font-size: 2.5rem; font-weight: 800; }
+    .fc-card .back-text { font-size: 1.3rem; color: var(--accent); margin-top: 16px; font-weight: 600; }
+    .fc-counter { font-weight: 700; font-size: 1.1rem; text-align: center; margin-top: 16px; }
+    .fc-card.revealed { border-color: var(--accent); }
+  </style>
+</head>
+<body>
+  <!-- Join -->
+  <div id="screen-join" class="container flex-center" style="min-height:100vh; gap:24px;">
+    <div class="text-center">
+      <div class="emoji-big">🃏</div>
+      <h1>Join Flashcards</h1>
+      <p class="text-dim">Enter the code from your teacher</p>
+    </div>
+    <div class="card flex-center gap-md" style="max-width:400px;">
+      <input type="text" id="codeInput" class="code-input" placeholder="ABC123" maxlength="6" autocomplete="off">
+      <input type="text" id="nickInput" placeholder="Your Nickname" maxlength="20" autocomplete="off">
+      <button class="btn btn-accent btn-block" onclick="joinSession()">Join! 🚀</button>
+      <p id="joinError" class="text-dim" style="color:var(--danger);"></p>
+    </div>
+    <a href="/" class="btn btn-ghost btn-sm">← Back to Home</a>
+  </div>
+
+  <!-- Waiting -->
+  <div id="screen-waiting" class="container flex-center hidden" style="min-height:80vh; gap:24px;">
+    <div class="text-center">
+      <div class="emoji-big">⏳</div>
+      <h2>You're in!</h2>
+      <p>Hi <strong id="displayNick"></strong>!</p>
+      <p class="text-dim">Waiting for teacher to start flashcards...</p>
+    </div>
+  </div>
+
+  <!-- Flashcard View -->
+  <div id="screen-flashcard" class="container hidden">
+    <div class="text-center">
+      <h2 id="deckTitle"></h2>
+    </div>
+
+    <div class="fc-display">
+      <div class="fc-card" id="fcCard">
+        <div class="front-text" id="fcFront">...</div>
+        <div class="back-text hidden" id="fcBack"></div>
+      </div>
+    </div>
+
+    <div class="fc-counter" id="fcCounter"></div>
+    <p class="text-dim text-center" style="margin-top:8px;">Teacher controls the cards</p>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const TYPE = 'flashcard';
+    let socket, sessionCode, nickname;
+
+    function show(id) { document.querySelectorAll('[id^="screen-"]').forEach(el => el.classList.add('hidden')); document.getElementById(id).classList.remove('hidden'); }
+    function toast(msg, type = 'success') { const t = document.createElement('div'); t.className = `toast toast-${type}`; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); }
+
+    document.getElementById('codeInput').addEventListener('input', function () { this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
+
+    function joinSession() {
+      const code = document.getElementById('codeInput').value.trim().toUpperCase();
+      const nick = document.getElementById('nickInput').value.trim();
+      const err = document.getElementById('joinError');
+      if (code.length !== 6) { err.textContent = 'Code must be 6 characters'; return; }
+      if (!nick || nick.length < 2) { err.textContent = 'Enter a nickname (2+ chars)'; return; }
+      err.textContent = '';
+      sessionCode = code; nickname = nick;
+      socket = io();
+      socket.emit('student-join', { type: TYPE, code: sessionCode, nickname });
+      socket.on('join-success', ({ state }) => {
+        document.getElementById('displayNick').textContent = nickname;
+        show(state === 'flashcard' ? 'screen-flashcard' : 'screen-waiting');
+      });
+      socket.on('error-msg', msg => { err.textContent = msg; });
+      setupListeners();
+    }
+
+    function setupListeners() {
+      socket.on('flashcard-started', ({ title }) => {
+        document.getElementById('deckTitle').textContent = title;
+        show('screen-flashcard');
+      });
+
+      socket.on('flashcard-update', ({ index, front, back, total, showBack }) => {
+        document.getElementById('fcFront').textContent = front;
+        const backEl = document.getElementById('fcBack');
+        const card = document.getElementById('fcCard');
+        if (back) {
+          backEl.textContent = back; backEl.classList.remove('hidden');
+          card.classList.add('revealed');
+        } else {
+          backEl.classList.add('hidden');
+          card.classList.remove('revealed');
+        }
+        document.getElementById('fcCounter').textContent = `Card ${index + 1} of ${total}`;
+      });
+
+      socket.on('back-to-lobby', () => show('screen-waiting'));
+      socket.on('session-ended', () => { socket.disconnect(); show('screen-join'); toast('Session ended', 'error'); });
+    }
+
+    (function autoRejoin() {
+      const p = new URLSearchParams(window.location.search);
+      const code = p.get('code'), nick = p.get('nick');
+      if (code && nick) { document.getElementById('codeInput').value = code; document.getElementById('nickInput').value = nick; history.replaceState(null, '', '/flashcard/student.html'); joinSession(); }
+    })();
+  </script>
+</body>
+</html>

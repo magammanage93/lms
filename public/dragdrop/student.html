@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Drag & Drop Student - EduPlay</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .dd-label { font-size: .85rem; color: var(--text-dim); margin-bottom: 6px; text-align: center; font-weight: 700; }
+    .score-display { font-size: 1.3rem; font-weight: 800; color: var(--accent); }
+    .dd-item.dragging { opacity: .4; }
+    .dd-ghost {
+      position: fixed; z-index: 9999; pointer-events: none; opacity: 0.9;
+      transform: scale(1.08) rotate(2deg);
+      background: var(--primary); padding: 14px 20px; border-radius: 10px;
+      font-weight: 700; color: #fff; text-align: center; white-space: nowrap;
+      box-shadow: 0 8px 24px rgba(0,0,0,.3);
+    }
+  </style>
+</head>
+<body>
+  <!-- Join -->
+  <div id="screen-join" class="container flex-center" style="min-height:100vh; gap:24px;">
+    <div class="text-center">
+      <div class="emoji-big">🧩</div>
+      <h1>Join Drag & Drop</h1>
+      <p class="text-dim">Enter the code from your teacher</p>
+    </div>
+    <div class="card flex-center gap-md" style="max-width:400px;">
+      <input type="text" id="codeInput" class="code-input" placeholder="ABC123" maxlength="6" autocomplete="off">
+      <input type="text" id="nickInput" placeholder="Your Nickname" maxlength="20" autocomplete="off">
+      <button class="btn btn-accent btn-block" onclick="joinSession()">Join! 🚀</button>
+      <p id="joinError" class="text-dim" style="color:var(--danger);"></p>
+    </div>
+    <a href="/" class="btn btn-ghost btn-sm">← Back to Home</a>
+  </div>
+
+  <!-- Waiting -->
+  <div id="screen-waiting" class="container flex-center hidden" style="min-height:80vh; gap:24px;">
+    <div class="text-center">
+      <div class="emoji-big">⏳</div>
+      <h2>You're in!</h2>
+      <p>Hi <strong id="displayNick"></strong>!</p>
+      <p class="text-dim">Waiting for teacher to start the activity...</p>
+    </div>
+  </div>
+
+  <!-- Game -->
+  <div id="screen-game" class="hidden">
+    <div class="navbar">
+      <div class="brand">🧩 Match the Items!</div>
+      <div class="score-display" id="scoreDisplay">0 / 0</div>
+    </div>
+    <div class="container">
+      <div class="dd-container" id="gameArea"></div>
+      <div style="margin-top:20px; text-align:center;">
+        <button class="btn btn-primary btn-lg" id="submitBtn" onclick="submitResult()">Submit Answers ✅</button>
+      </div>
+      <div id="resultArea" class="hidden" style="margin-top:20px;">
+        <div class="card text-center">
+          <div id="resultEmoji" style="font-size:4rem;"></div>
+          <h2 id="resultTitle"></h2>
+          <p class="score-display" id="finalScore"></p>
+          <div id="resultDetails" style="margin-top:16px; text-align:left;"></div>
+          <p id="submitted" class="hidden" style="margin-top:12px; color:var(--accent); font-weight:700;">✅ Response Submitted!</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const TYPE = 'dragdrop';
+    let socket, sessionCode, nickname;
+    let puzzle, total = 0, placed = 0, placements = {};
+
+    function show(id) { document.querySelectorAll('[id^="screen-"]').forEach(el => el.classList.add('hidden')); document.getElementById(id).classList.remove('hidden'); }
+    function toast(msg, type = 'success') { const t = document.createElement('div'); t.className = `toast toast-${type}`; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); }
+
+    document.getElementById('codeInput').addEventListener('input', function () { this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
+
+    function joinSession() {
+      const code = document.getElementById('codeInput').value.trim().toUpperCase();
+      const nick = document.getElementById('nickInput').value.trim();
+      const err = document.getElementById('joinError');
+      if (code.length !== 6) { err.textContent = 'Code must be 6 characters'; return; }
+      if (!nick || nick.length < 2) { err.textContent = 'Enter a nickname (2+ chars)'; return; }
+      err.textContent = '';
+      sessionCode = code; nickname = nick;
+      socket = io();
+      socket.emit('student-join', { type: TYPE, code: sessionCode, nickname });
+      socket.on('join-success', ({ state }) => {
+        document.getElementById('displayNick').textContent = nickname;
+        if (state === 'activity') loadGame(); else show('screen-waiting');
+      });
+      socket.on('error-msg', msg => { err.textContent = msg; });
+      socket.on('activity-started', () => loadGame());
+      socket.on('activity-ended', () => { show('screen-waiting'); toast('Activity ended by teacher'); });
+      socket.on('back-to-lobby', () => show('screen-waiting'));
+      socket.on('session-ended', () => { socket.disconnect(); show('screen-join'); toast('Session ended', 'error'); });
+    }
+
+    async function loadGame() {
+      show('screen-game');
+      const res = await fetch('/api/puzzles');
+      const puzzles = await res.json();
+      puzzle = puzzles[Math.floor(Math.random() * puzzles.length)];
+      total = puzzle.pairs.length; placed = 0; placements = {};
+      render();
+    }
+
+    function shuffle(arr) { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+    function render() {
+      const area = document.getElementById('gameArea');
+      const si = shuffle(puzzle.pairs), st = shuffle(puzzle.pairs);
+      area.innerHTML = `
+        <div><div class="dd-label">ITEMS</div><div class="dd-items" id="itemsCol">
+          ${si.map((p, i) => `<div class="dd-item" draggable="true" data-match="${p.target}" id="item-${i}">${p.item}</div>`).join('')}
+        </div></div>
+        <div><div class="dd-label">MATCHES</div><div class="dd-targets" id="targetsCol">
+          ${st.map((p, i) => `<div class="dd-target" data-answer="${p.target}" id="target-${i}">${p.target}</div>`).join('')}
+        </div></div>`;
+      document.getElementById('scoreDisplay').textContent = `0 / ${total} placed`;
+      document.getElementById('submitBtn').disabled = false;
+      document.getElementById('submitBtn').textContent = 'Submit Answers ✅';
+      document.getElementById('resultArea').classList.add('hidden');
+      setupDragDrop();
+    }
+
+    function setupDragDrop() {
+      let draggedEl = null, ghost = null, currentHover = null;
+      function createGhost(item, x, y) { ghost = document.createElement('div'); ghost.className = 'dd-ghost'; ghost.textContent = item.textContent; ghost.style.left = (x-60)+'px'; ghost.style.top = (y-25)+'px'; document.body.appendChild(ghost); }
+      function moveGhost(x, y) { if (ghost) { ghost.style.left = (x-60)+'px'; ghost.style.top = (y-25)+'px'; } }
+      function removeGhost() { if (ghost) { ghost.remove(); ghost = null; } }
+      function highlightTarget(x, y) {
+        const el = document.elementFromPoint(x, y);
+        if (currentHover && currentHover !== el) currentHover.classList.remove('hover');
+        if (el && el.classList.contains('dd-target') && !el.classList.contains('matched')) { el.classList.add('hover'); currentHover = el; } else { currentHover = null; }
+      }
+
+      document.querySelectorAll('.dd-item:not(.matched)').forEach(item => {
+        item.addEventListener('dragstart', e => { draggedEl = item; item.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
+        item.addEventListener('dragend', () => { item.classList.remove('dragging'); draggedEl = null; });
+        item.addEventListener('touchstart', e => { e.preventDefault(); draggedEl = item; item.classList.add('dragging'); const t = e.touches[0]; createGhost(item, t.clientX, t.clientY); });
+        item.addEventListener('touchmove', e => { e.preventDefault(); const t = e.touches[0]; moveGhost(t.clientX, t.clientY); highlightTarget(t.clientX, t.clientY); });
+        item.addEventListener('touchend', e => {
+          e.preventDefault(); item.classList.remove('dragging'); removeGhost();
+          if (currentHover) currentHover.classList.remove('hover');
+          const t = e.changedTouches[0]; const dt = document.elementFromPoint(t.clientX, t.clientY);
+          if (dt && dt.classList.contains('dd-target') && !dt.classList.contains('matched') && draggedEl) handleDrop(dt, draggedEl);
+          draggedEl = null; currentHover = null;
+        });
+        item.addEventListener('touchcancel', () => { item.classList.remove('dragging'); removeGhost(); draggedEl = null; if (currentHover) currentHover.classList.remove('hover'); currentHover = null; });
+      });
+
+      document.querySelectorAll('.dd-target:not(.matched)').forEach(target => {
+        target.addEventListener('dragover', e => { e.preventDefault(); target.classList.add('hover'); });
+        target.addEventListener('dragleave', () => target.classList.remove('hover'));
+        target.addEventListener('drop', e => { e.preventDefault(); target.classList.remove('hover'); if (draggedEl) handleDrop(target, draggedEl); });
+      });
+    }
+
+    function handleDrop(target, item) {
+      const existingId = target.getAttribute('data-placed-item');
+      if (existingId) { const old = document.getElementById(existingId); if (old) { old.classList.remove('matched'); old.style.display = ''; } delete placements[target.id]; placed--; }
+      item.classList.add('matched'); item.style.display = 'none'; target.classList.add('matched');
+      target.setAttribute('data-placed-item', item.id);
+      target.innerHTML = `${item.textContent} → ${target.textContent}`;
+      placements[target.id] = { item: item.textContent, itemMatch: item.getAttribute('data-match'), targetAnswer: target.getAttribute('data-answer') };
+      placed++;
+      document.getElementById('scoreDisplay').textContent = `${placed} / ${total} placed`;
+    }
+
+    function submitResult() {
+      if (placed < total && !confirm(`Only ${placed}/${total} placed. Submit anyway?`)) return;
+      let score = 0; const results = [];
+      document.querySelectorAll('.dd-target').forEach(target => {
+        const p = placements[target.id]; const tl = target.getAttribute('data-answer');
+        if (p) {
+          const correct = p.itemMatch === p.targetAnswer; if (correct) score++;
+          results.push({ item: p.item, placedOn: tl, correct });
+          target.innerHTML = `${p.item} → ${tl} ${correct ? '✅' : '❌'}`;
+          target.style.borderColor = correct ? 'var(--accent)' : 'var(--danger)'; target.style.borderStyle = 'solid';
+          target.style.background = correct ? 'rgba(6,214,160,.15)' : 'rgba(239,68,68,.15)';
+        } else { results.push({ item: '(empty)', placedOn: tl, correct: false }); target.style.borderColor = 'var(--danger)'; target.style.background = 'rgba(239,68,68,.1)'; }
+      });
+      const pct = Math.round((score / total) * 100);
+      document.getElementById('resultEmoji').textContent = pct === 100 ? '🎉' : pct >= 60 ? '👍' : '💪';
+      document.getElementById('resultTitle').textContent = pct === 100 ? 'Perfect!' : pct >= 60 ? 'Good Job!' : 'Keep Practicing!';
+      document.getElementById('finalScore').textContent = `${score} / ${total} correct (${pct}%)`;
+      document.getElementById('resultDetails').innerHTML = results.map(r => `<div style="padding:6px 0; border-bottom:1px solid rgba(255,255,255,.06);">${r.correct ? '✅' : '❌'} <strong>${r.item}</strong> → ${r.placedOn}</div>`).join('');
+      document.getElementById('resultArea').classList.remove('hidden');
+      document.getElementById('submitBtn').disabled = true; document.getElementById('submitBtn').textContent = 'Submitted';
+
+      socket.emit('submit-activity', { type: TYPE, code: sessionCode, activityType: 'dragdrop', data: { score, total, results, puzzle: puzzle.title } });
+      document.getElementById('submitted').classList.remove('hidden');
+    }
+
+    (function autoRejoin() {
+      const p = new URLSearchParams(window.location.search);
+      const code = p.get('code'), nick = p.get('nick');
+      if (code && nick) { document.getElementById('codeInput').value = code; document.getElementById('nickInput').value = nick; history.replaceState(null, '', '/dragdrop/student.html'); joinSession(); }
+    })();
+  </script>
+</body>
+</html>
